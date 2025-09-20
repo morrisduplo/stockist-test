@@ -76,9 +76,77 @@ async function initDatabase() {
 
 // Routes
 
-// Serve the main page
+// Serve the landing page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Serve the upload page
+app.get('/upload', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'upload.html'));
+});
+
+// Serve the customers page
+app.get('/customers', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'customers.html'));
+});
+
+// API endpoint to get customer data with statistics
+app.get('/api/customers', async (req, res) => {
+  try {
+    // Get customer statistics
+    const customerStats = await pool.query(`
+      SELECT 
+        customer_name,
+        country,
+        COUNT(*) as total_orders,
+        SUM(quantity) as total_quantity,
+        SUM(total) as total_revenue,
+        MAX(order_date) as last_order
+      FROM records 
+      WHERE customer_name != 'Unknown'
+      GROUP BY customer_name, country
+      ORDER BY total_revenue DESC
+    `);
+
+    // Get overall statistics
+    const overallStats = await pool.query(`
+      SELECT 
+        COUNT(DISTINCT customer_name) as total_customers,
+        COUNT(DISTINCT country) as total_countries,
+        COUNT(*) as total_orders,
+        SUM(total) as total_revenue
+      FROM records 
+      WHERE customer_name != 'Unknown'
+    `);
+
+    res.json({
+      customers: customerStats.rows,
+      stats: overallStats.rows[0]
+    });
+  } catch (error) {
+    console.error('Customer data error:', error);
+    res.status(500).json({ error: 'Failed to fetch customer data' });
+  }
+});
+
+// API endpoint to update customer information
+app.post('/api/customers/update', async (req, res) => {
+  try {
+    const { customerName, field, value } = req.body;
+    
+    if (field === 'country') {
+      await pool.query(
+        'UPDATE records SET country = $1 WHERE customer_name = $2',
+        [value, customerName]
+      );
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Customer update error:', error);
+    res.status(500).json({ error: 'Failed to update customer' });
+  }
 });
 
 // Upload and process Excel/CSV file
