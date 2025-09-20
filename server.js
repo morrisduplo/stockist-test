@@ -193,6 +193,41 @@ app.post('/api/customers/exclude', async (req, res) => {
   }
 });
 
+// Debug endpoint for specific record
+app.get('/debug-record/:id', async (req, res) => {
+  try {
+    const recordId = req.params.id;
+    
+    // Get the specific record
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    
+    if (record.rows.length === 0) {
+      return res.json({ error: 'Record not found' });
+    }
+    
+    // Get upload info
+    const uploadInfo = await pool.query(`
+      SELECT filename FROM upload_log 
+      WHERE upload_date <= $1 
+      ORDER BY upload_date DESC 
+      LIMIT 1
+    `, [record.rows[0].upload_date]);
+    
+    res.json({
+      record: record.rows[0],
+      uploadFile: uploadInfo.rows[0]?.filename || 'Unknown',
+      debug: {
+        customer_name: record.rows[0].customer_name,
+        upload_date: record.rows[0].upload_date,
+        country: record.rows[0].country,
+        title: record.rows[0].title
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Clear all data endpoint
 app.post('/clear-data', async (req, res) => {
   try {
@@ -319,7 +354,7 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-// IMPROVED: Shopify data processing function with debugging
+// ENHANCED: Shopify data processing function with improved name cleaning
 function processShopifyData(rawData) {
   console.log('=== DEBUGGING CSV PROCESSING ===');
   console.log('Raw data length:', rawData.length);
@@ -381,19 +416,31 @@ function processShopifyData(rawData) {
     if (!order.customerInfo.name && !order.customerInfo.company) {
       // Check for company fields first (better for B2B)
       if (row['Billing Company'] && row['Billing Company'].trim()) {
-        order.customerInfo.company = row['Billing Company'].trim();
-        order.customerInfo.name = row['Billing Company'].trim();
-        console.log(`Found company "${order.customerInfo.company}" for order ${orderNumber}`);
+        const cleanCompany = cleanCustomerName(row['Billing Company'].trim());
+        if (cleanCompany) {
+          order.customerInfo.company = cleanCompany;
+          order.customerInfo.name = cleanCompany;
+          console.log(`Found company "${cleanCompany}" for order ${orderNumber} (original: "${row['Billing Company']}")`);
+        }
       } else if (row['Shipping Company'] && row['Shipping Company'].trim()) {
-        order.customerInfo.company = row['Shipping Company'].trim();
-        order.customerInfo.name = row['Shipping Company'].trim();
-        console.log(`Found shipping company "${order.customerInfo.company}" for order ${orderNumber}`);
+        const cleanCompany = cleanCustomerName(row['Shipping Company'].trim());
+        if (cleanCompany) {
+          order.customerInfo.company = cleanCompany;
+          order.customerInfo.name = cleanCompany;
+          console.log(`Found shipping company "${cleanCompany}" for order ${orderNumber} (original: "${row['Shipping Company']}")`);
+        }
       } else if (row['Billing Name'] && row['Billing Name'].trim()) {
-        order.customerInfo.name = row['Billing Name'].trim();
-        console.log(`Found billing name "${order.customerInfo.name}" for order ${orderNumber}`);
+        const cleanName = cleanCustomerName(row['Billing Name'].trim());
+        if (cleanName) {
+          order.customerInfo.name = cleanName;
+          console.log(`Found billing name "${cleanName}" for order ${orderNumber} (original: "${row['Billing Name']}")`);
+        }
       } else if (row['Shipping Name'] && row['Shipping Name'].trim()) {
-        order.customerInfo.name = row['Shipping Name'].trim();
-        console.log(`Found shipping name "${order.customerInfo.name}" for order ${orderNumber}`);
+        const cleanName = cleanCustomerName(row['Shipping Name'].trim());
+        if (cleanName) {
+          order.customerInfo.name = cleanName;
+          console.log(`Found shipping name "${cleanName}" for order ${orderNumber} (original: "${row['Shipping Name']}")`);
+        }
       }
     }
     
@@ -469,6 +516,95 @@ function processShopifyData(rawData) {
   });
   
   return processedRecords;
+}
+
+// ENHANCED: Function to clean customer names with special character handling
+function cleanCustomerName(rawName) {
+  if (!rawName || typeof rawName !== 'string') {
+    return null;
+  }
+  
+  console.log(`Cleaning customer name: "${rawName}"`);
+  
+  // Remove leading/trailing whitespace
+  let cleaned = rawName.trim();
+  
+  // Handle special characters and encoding issues
+  cleaned = cleaned
+    // Remove or replace HTML entities
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#\d+;/g, '') // Remove numeric HTML entities
+    
+    // Normalize quotes and apostrophes
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    
+    // Remove control characters and weird whitespace
+    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+    .replace(/[\u2000-\u200B\u2028\u2029\u202F\u205F\u3000]/g, ' ')
+    
+    // Replace multiple spaces with single space
+    .replace(/\s+/g, ' ')
+    
+    // Final trim
+    .trim();
+  
+  // If name contains a comma, take only the part before the first comma
+  if (cleaned.includes(',')) {
+    const beforeComma = cleaned.split(',')[0].trim();
+    console.log(`Split on comma: "${cleaned}" -> "${beforeComma}"`);
+    cleaned = beforeComma;
+  }
+  
+  // Additional cleanup - remove common problematic patterns
+  cleaned = cleaned
+    // Remove common address indicators
+    .replace(/^(c\/o|care of|attn:|attention:)\s+/i, '')
+    // Remove leading numbers that might be addresses
+    .replace(/^\d+[a-zA-Z]?\s+/, '')
+    // Remove trailing address-like patterns
+    .replace(/\s+(ltd|limited|inc|corp|gmbh|srl|bv)\.?$/i, (match) => match) // Keep these
+    .replace(/\s+\d+\s*$/, '') // Remove trailing numbers
+    .trim();
+  
+  // Log what we're doing
+  if (cleaned !== rawName.trim()) {
+    console.log(`Cleaned name: "${rawName}" -> "${cleaned}"`);
+  }
+  
+  // Validation checks
+  
+  // Return null if the cleaned name is empty or too short
+  if (cleaned.length < 2) {
+    console.log(`Rejected - too short: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it looks like an address (starts with numbers)
+  if (/^\d+\s/.test(cleaned)) {
+    console.log(`Rejected - looks like address: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it's only special characters or numbers
+  if (!/[a-zA-Z]/.test(cleaned)) {
+    console.log(`Rejected - no letters: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it's too generic
+  const genericNames = ['customer', 'guest', 'user', 'test', 'admin', 'default'];
+  if (genericNames.includes(cleaned.toLowerCase())) {
+    console.log(`Rejected - generic name: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  console.log(`Accepted customer name: "${cleaned}"`);
+  return cleaned;
 }
 
 // Process Gazelle data (Excel format)
