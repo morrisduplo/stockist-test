@@ -745,11 +745,41 @@ function parseCSVLine(line) {
   return result;
 }
 
-// Get all records - UNLIMITED (removed LIMIT 1000)
+// Get records with pagination (500 per page)
 app.get('/records', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM records ORDER BY upload_date DESC');
-    res.json(result.rows);
+    const page = parseInt(req.query.page) || 1;
+    const limit = 500; // Fixed at 500 records per page
+    const offset = (page - 1) * limit;
+    
+    console.log(`Fetching page ${page}, offset ${offset}, limit ${limit}`);
+    
+    // Get total count
+    const countResult = await pool.query('SELECT COUNT(*) FROM records');
+    const totalRecords = parseInt(countResult.rows[0].count);
+    
+    // Get paginated records
+    const result = await pool.query(
+      'SELECT * FROM records ORDER BY upload_date DESC LIMIT $1 OFFSET $2', 
+      [limit, offset]
+    );
+    
+    const totalPages = Math.ceil(totalRecords / limit);
+    
+    console.log(`Returning ${result.rows.length} records, page ${page} of ${totalPages}`);
+    
+    res.json({
+      records: result.rows,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalRecords: totalRecords,
+        recordsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+        recordsOnThisPage: result.rows.length
+      }
+    });
   } catch (error) {
     console.error('Fetch records error:', error);
     res.status(500).json({ error: 'Failed to fetch records' });
