@@ -178,8 +178,15 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const dataType = req.body.dataType || 'shopify'; // Default to shopify for CSV
     const isCSV = req.file.originalname.toLowerCase().endsWith('.csv');
+    
+    // Auto-detect data type based on file type and name
+    let dataType;
+    if (isCSV || req.file.originalname.toLowerCase().includes('shopify')) {
+      dataType = 'shopify';
+    } else {
+      dataType = 'gazelle'; // Excel files are typically Gazelle format
+    }
     
     let rawData;
     
@@ -220,8 +227,13 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     console.log('Column headers:', Object.keys(rawData[0] || {}));
     console.log('Sample row:', rawData[0]);
     
-    // Process data with improved customer grouping
-    const processedRecords = processShopifyData(rawData);
+    // Process data based on detected type
+    let processedRecords;
+    if (dataType === 'shopify') {
+      processedRecords = processShopifyData(rawData);
+    } else {
+      processedRecords = processGazelleData(rawData);
+    }
     
     // Insert into database
     const insertedRecords = [];
@@ -404,6 +416,53 @@ function processShopifyData(rawData) {
     console.log('---');
   });
   
+  return processedRecords;
+}
+
+// Process Gazelle data (Excel format)
+function processGazelleData(rawData) {
+  console.log('=== PROCESSING GAZELLE DATA ===');
+  console.log('Raw data length:', rawData.length);
+  
+  const processedRecords = [];
+  
+  rawData.forEach((row, index) => {
+    try {
+      // Skip empty rows
+      if (!row || Object.keys(row).length === 0) return;
+      
+      // Gazelle format processing (existing logic)
+      const keys = Object.keys(row);
+      console.log(`Row ${index + 1} keys:`, keys.slice(0, 10)); // Show first 10 keys
+      
+      const record = {
+        order_date: parseDate(row[keys[0]] || new Date()),
+        cus_no: row[keys[2]] || null,
+        customer_name: row[keys[3]] || 'Unknown',
+        title: row[keys[5]] || 'Unknown',
+        book_ean: row[keys[7]] || null,
+        quantity: parseInt(row[keys[8]]) || 0,
+        total: parseFloat(row[keys[9]]) || 0,
+        country: 'UK' // Default for Gazelle data
+      };
+      
+      // Debug output for first few records
+      if (index < 3) {
+        console.log(`Gazelle Record ${index + 1}:`);
+        console.log(`  Date: ${record.order_date}`);
+        console.log(`  Customer: ${record.customer_name}`);
+        console.log(`  Title: ${record.title}`);
+        console.log(`  Quantity: ${record.quantity}`);
+        console.log('---');
+      }
+      
+      processedRecords.push(record);
+    } catch (error) {
+      console.error(`Error processing Gazelle row ${index + 1}:`, error);
+    }
+  });
+  
+  console.log(`Created ${processedRecords.length} Gazelle records`);
   return processedRecords;
 }
 
