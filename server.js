@@ -25,12 +25,14 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+      'application/csv'
     ];
-    if (allowedTypes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls)$/)) {
+    if (allowedTypes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls|csv)$/)) {
       cb(null, true);
     } else {
-      cb(new Error('Only Excel files are allowed'), false);
+      cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
     }
   }
 });
@@ -78,47 +80,96 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Upload and process Excel file
+// Upload and process Excel/CSV file
 app.post('/upload', upload.single('excelFile'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Read Excel file
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0]; // Use first sheet
-    const worksheet = workbook.Sheets[sheetName];
+    const dataType = req.body.dataType || 'gazelle'; // Default to gazelle format
+    const isCSV = req.file.originalname.toLowerCase().endsWith('.csv');
     
-    // Convert to JSON, starting from row 2 (skipping header row)
-    const data = XLSX.utils.sheet_to_json(worksheet, { range: 1 });
+    let data;
     
-    console.log('Extracted data sample:', data.slice(0, 3)); // Log first 3 rows for debugging
-    console.log('Column headers:', Object.keys(data[0] || {})); // Log column names
+    if (isCSV) {
+      // Parse CSV file
+      const csvText = req.file.buffer.toString('utf8');
+      const lines = csvText.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      
+      data = [];
+      for (let i = 1; i < lines.length; i++) {
+        if (lines[i].trim()) {
+          const values = lines[i].split(',');
+          const row = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] ? values[index].trim().replace(/"/g, '') : '';
+          });
+          data.push(row);
+        }
+      }
+    } else {
+      // Parse Excel file
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      data = XLSX.utils.sheet_to_json(worksheet, { range: 1 });
+    }
+    
+    console.log(`Processing ${dataType} data format (${isCSV ? 'CSV' : 'Excel'})`);
+    console.log('Extracted data sample:', data.slice(0, 3));
+    console.log('Column headers:', Object.keys(data[0] || {}));
     
     // Process and insert data
     const insertedRecords = [];
+    const orderCustomerMap = new Map(); // Track customer names by order for Shopify
+    
+    // First pass for Shopify: collect customer names by order
+    if (dataType === 'shopify') {
+      for (const row of data) {
+        if (row['Name'] && row['Billing Name']) {
+          orderCustomerMap.set(row['Name'], row['Billing Name']);
+        }
+      }
+    }
     
     for (const row of data) {
       // Skip empty rows
       if (!row || Object.keys(row).length === 0) continue;
       
-      // Get all column keys to understand the structure
-      const keys = Object.keys(row);
-      console.log('Processing row with keys:', keys);
-      console.log('Row data:', row);
+      let record;
       
-      // Map your specific Excel columns to database fields
-      // Based on your original Excel structure, adjust these mappings
-      const record = {
-        order_date: parseDate(row[keys[0]] || new Date()), // First column (Date)
-        cus_no: row[keys[2]] || null, // Third column (Cus No)
-        customer_name: row[keys[3]] || 'Unknown', // Fourth column (Customer Name)
-        title: row[keys[5]] || 'Unknown', // Sixth column (Title)
-        book_ean: row[keys[7]] || null, // Eighth column (Book EAN)
-        quantity: parseInt(row[keys[8]]) || 0, // Ninth column (Quantity)
-        total: parseFloat(row[keys[9]]) || 0 // Tenth column (Total)
-      };
+      if (dataType === 'gazelle') {
+        // Gazelle format processing (existing logic)
+        const keys = Object.keys(row);
+        record = {
+          order_date: parseDate(row[keys[0]] || new Date()),
+          cus_no: row[keys[2]] || null,
+          customer_name: row[keys[3]] || 'Unknown',
+          title: row[keys[5]] || 'Unknown',
+          book_ean: row[keys[7]] || null,
+          quantity: parseInt(row[keys[8]]) || 0,
+          total: parseFloat(row[keys[9]]) || 0
+        };
+      } else if (dataType === 'shopify') {
+        // Shopify format processing based on your specifications
+        const orderNumber = row['Name']; // Column A - Order number
+        const customerName = orderCustomerMap.get(orderNumber) || 'Unknown'; // Get from first occurrence
+        const itemPrice = parseFloat(row['Lineitem price']) || 0; // Column S - price per item
+        const quantity = parseInt(row['Lineitem quantity']) || 0; // Column Q - quantity
+        const totalPrice = itemPrice * quantity; // Calculate total as price * quantity
+        
+        record = {
+          order_date: parseDate(row['Created at']), // Column P - Date
+          cus_no: null, // No customer number in Shopify data
+          customer_name: customerName, // Column AM - Billing Name (from first order line)
+          title: row['Lineitem name'] || 'Unknown', // Column R - Title
+          book_ean: row['Lineitem sku'] || null, // SKU if available
+          quantity: quantity, // Column Q - Quantity
+          total: totalPrice // Column S * Q - Price per item multiplied by quantity
+        };
+      }
 
       const result = await pool.query(
         'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
@@ -128,14 +179,14 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       insertedRecords.push(result.rows[0]);
     }
 
-    // Log the file upload
+    // Log the file upload with data type
     await pool.query(
       'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
-      [req.file.originalname, insertedRecords.length]
+      [`${dataType.toUpperCase()}: ${req.file.originalname}`, insertedRecords.length]
     );
 
     res.json({ 
-      message: `Successfully processed ${insertedRecords.length} records`, 
+      message: `Successfully processed ${insertedRecords.length} ${dataType} records`, 
       records: insertedRecords 
     });
 
