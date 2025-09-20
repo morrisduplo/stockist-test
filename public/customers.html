@@ -473,7 +473,7 @@
             displayCustomers();
         }
 
-        // Display customers table
+        // Display customers table with CITY column
         function displayCustomers() {
             if (filteredData.length === 0) {
                 if (customersData.length === 0) {
@@ -492,6 +492,7 @@
                         <th>Status</th>
                         <th>Customer Name</th>
                         <th>Country</th>
+                        <th>City</th>
                         <th>Orders</th>
                         <th>Quantity</th>
                         <th>Revenue</th>
@@ -517,6 +518,7 @@
                                 </td>
                                 <td>${customer.customer_name || 'N/A'}</td>
                                 <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
+                                <td class="edit-cell" data-customer="${customer.customer_name}" data-field="city">${customer.city || 'London'}</td>
                                 <td>${customer.total_orders || 0}</td>
                                 <td>${customer.total_quantity || 0}</td>
                                 <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
@@ -655,7 +657,7 @@
             }
         }
 
-        // Make cell editable (country editing)
+        // Make cell editable (country and city editing)
         function makeEditable(e) {
             const cell = e.target;
             const currentValue = cell.textContent;
@@ -684,6 +686,30 @@
                 select.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         saveEdit(cell, customerName, field, select.value, currentValue);
+                    } else if (e.key === 'Escape') {
+                        cancelEdit(cell, currentValue);
+                    }
+                });
+            } else if (field === 'city') {
+                cell.classList.add('editing');
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentValue;
+                input.style.width = '100%';
+                input.style.padding = '4px';
+                input.style.border = '1px solid #28a745';
+                input.style.borderRadius = '2px';
+                
+                cell.innerHTML = '';
+                cell.appendChild(input);
+                input.focus();
+                input.select();
+                
+                input.addEventListener('blur', () => saveEdit(cell, customerName, field, input.value, currentValue));
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        saveEdit(cell, customerName, field, input.value, currentValue);
                     } else if (e.key === 'Escape') {
                         cancelEdit(cell, currentValue);
                     }
@@ -721,7 +747,9 @@
                         customer[field] = newValue;
                     }
                     
-                    updateCountryFilter();
+                    if (field === 'country') {
+                        updateCountryFilter();
+                    }
                 } else {
                     throw new Error('Failed to update customer');
                 }
