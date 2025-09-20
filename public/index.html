@@ -461,6 +461,7 @@
                             <th>Book EAN</th>
                             <th>Quantity</th>
                             <th>Total</th>
+                            <th>Country</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -474,6 +475,7 @@
                                 <td>${record.book_ean || '-'}</td>
                                 <td>${record.quantity || '-'}</td>
                                 <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
+                                <td>${record.country || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
