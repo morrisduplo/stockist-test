@@ -39,9 +39,30 @@
         }
 
         h1 {
-            text-align: center;
             color: #333333;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 30px;
+            border-bottom: 2px solid #f1f3f4;
+            padding-bottom: 20px;
+        }
+
+        .back-link {
+            color: #666;
+            text-decoration: none;
+            padding: 8px 16px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            background: #f1f3f4;
         }
 
         .upload-section {
@@ -211,7 +232,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>Excel Database Application</h1>
+        <div class="header">
+            <h1>Upload Sales Data</h1>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
         
         <!-- Upload Section -->
         <div class="upload-section">
