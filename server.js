@@ -54,6 +54,7 @@ async function initDatabase() {
         book_ean VARCHAR(20),
         quantity INTEGER,
         total DECIMAL(10,2),
+        country VARCHAR(100),
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -125,11 +126,22 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     const insertedRecords = [];
     const orderCustomerMap = new Map(); // Track customer names by order for Shopify
     
-    // First pass for Shopify: collect customer names by order
+    // First pass for Shopify: collect customer names and countries by order
     if (dataType === 'shopify') {
       for (const row of data) {
-        if (row['Name'] && row['Billing Name']) {
-          orderCustomerMap.set(row['Name'], row['Billing Name']);
+        if (row['Name'] && (row['Billing Name'] || row['Billing Country'])) {
+          if (row['Billing Name']) {
+            orderCustomerMap.set(row['Name'], {
+              name: row['Billing Name'],
+              country: row['Billing Country'] || 'Unknown'
+            });
+          } else if (!orderCustomerMap.has(row['Name']) && row['Billing Country']) {
+            // If we don't have name yet but have country, store what we have
+            orderCustomerMap.set(row['Name'], {
+              name: orderCustomerMap.get(row['Name'])?.name || 'Unknown',
+              country: row['Billing Country']
+            });
+          }
         }
       }
     }
@@ -150,12 +162,13 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
           title: row[keys[5]] || 'Unknown',
           book_ean: row[keys[7]] || null,
           quantity: parseInt(row[keys[8]]) || 0,
-          total: parseFloat(row[keys[9]]) || 0
+          total: parseFloat(row[keys[9]]) || 0,
+          country: 'UK' // Default for Gazelle data
         };
       } else if (dataType === 'shopify') {
         // Shopify format processing based on your specifications
         const orderNumber = row['Name']; // Column A - Order number
-        const customerName = orderCustomerMap.get(orderNumber) || 'Unknown'; // Get from first occurrence
+        const orderData = orderCustomerMap.get(orderNumber) || { name: 'Unknown', country: 'Unknown' };
         const itemPrice = parseFloat(row['Lineitem price']) || 0; // Column S - price per item
         const quantity = parseInt(row['Lineitem quantity']) || 0; // Column Q - quantity
         const totalPrice = itemPrice * quantity; // Calculate total as price * quantity
@@ -163,17 +176,18 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
         record = {
           order_date: parseDate(row['Created at']), // Column P - Date
           cus_no: null, // No customer number in Shopify data
-          customer_name: customerName, // Column AM - Billing Name (from first order line)
+          customer_name: orderData.name, // Column AC - Billing Name (from first order line)
           title: row['Lineitem name'] || 'Unknown', // Column R - Title
           book_ean: row['Lineitem sku'] || null, // SKU if available
           quantity: quantity, // Column Q - Quantity
-          total: totalPrice // Column S * Q - Price per item multiplied by quantity
+          total: totalPrice, // Column S * Q - Price per item multiplied by quantity
+          country: orderData.country // Column AG - Billing Country (from first order line)
         };
       }
 
       const result = await pool.query(
-        'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-        [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total]
+        'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+        [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country]
       );
       
       insertedRecords.push(result.rows[0]);
