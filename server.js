@@ -745,10 +745,10 @@ function parseCSVLine(line) {
   return result;
 }
 
-// Get all records
+// Get all records - UNLIMITED (removed LIMIT 1000)
 app.get('/records', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM records ORDER BY upload_date DESC LIMIT 1000');
+    const result = await pool.query('SELECT * FROM records ORDER BY upload_date DESC');
     res.json(result.rows);
   } catch (error) {
     console.error('Fetch records error:', error);
