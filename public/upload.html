@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Database Application</title>
+    <!-- Import Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier', monospace;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        /* Apply EB Garamond to all headings */
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'EB Garamond', serif;
+            font-weight: 400; /* Normal weight, not bold */
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333333;
+            margin-bottom: 30px;
+        }
+
+        .upload-section {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-drop-area {
+            flex: 1;
+            padding: 20px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 5px;
+            background: white;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .file-drop-area:hover {
+            border-color: #666666;
+            background-color: #f8f9fa;
+        }
+
+        .file-drop-area.dragover {
+            border-color: #333333;
+            background-color: #e9ecef;
+        }
+
+        .file-drop-area input[type="file"] {
+            display: none;
+        }
+
+        .file-drop-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        input[type="file"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 5px;
+            background: white;
+        }
+
+        button {
+            background: #000000;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background: #333333;
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .status.success {
+            background: #f1f3f4;
+            color: #333333;
+            border: 1px solid #666666;
+        }
+
+        .status.error {
+            background: #f1f1f1;
+            color: #333333;
+            border: 1px solid #666666;
+        }
+
+        .records-section {
+            margin-top: 30px;
+        }
+
+        .records-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn {
+            background: #000000;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+
+        .refresh-btn:hover {
+            background: #333333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+
+        th, td {
+            padding: 2px 8px;
+            text-align: left;
+            border: none;
+            line-height: 1.2;
+        }
+
+        th {
+            background-color: #34495e;
+            color: white;
+            font-weight: normal;
+            font-family: 'Courier', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .no-records {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        .record-count {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Excel Database Application</h1>
+        
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <h2>Upload Sales Data</h2>
+            <form id="uploadForm" class="upload-form">
+                <div class="file-drop-area" id="fileDropArea">
+                    <div>📁 Drop Excel or CSV file here or click to browse</div>
+                    <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" required>
+                </div>
+                <button type="submit" id="uploadBtn">Upload & Process</button>
+            </form>
+            <div id="status" class="status"></div>
+        </div>
+
+        <!-- Records Section -->
+        <div class="records-section">
+            <!-- Upload Log Section -->
+            <div class="upload-log-section">
+                <div class="records-header">
+                    <h2>Upload History</h2>
+                    <div>
+                        <span id="logCount" class="record-count"></span>
+                        <button id="refreshLogBtn" class="refresh-btn">Refresh Log</button>
+                    </div>
+                </div>
+                
+                <div id="uploadLogContainer">
+                    <div class="loading">Loading upload history...</div>
+                </div>
+            </div>
+
+            <!-- Stored Records Section -->
+            <div style="margin-top: 40px;">
+                <div class="records-header">
+                    <h2>Stored Records</h2>
+                    <div>
+                        <span id="recordCount" class="record-count"></span>
+                        <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
+                    </div>
+                </div>
+                
+                <div id="recordsContainer">
+                    <div class="loading">Loading records...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const uploadForm = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const fileDropArea = document.getElementById('fileDropArea');
+        const recordsContainer = document.getElementById('recordsContainer');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const recordCount = document.getElementById('recordCount');
+        const uploadLogContainer = document.getElementById('uploadLogContainer');
+        const refreshLogBtn = document.getElementById('refreshLogBtn');
+        const logCount = document.getElementById('logCount');
+
+        // Drag and drop functionality
+        fileDropArea.addEventListener('click', () => fileInput.click());
+
+        fileDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileDropArea.classList.add('dragover');
+        });
+
+        fileDropArea.addEventListener('dragleave', () => {
+            fileDropArea.classList.remove('dragover');
+        });
+
+        fileDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileDropArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
+                    fileInput.files = files;
+                    updateDropAreaText(file.name);
+                } else {
+                    showStatus('Please select an Excel or CSV file (.xlsx, .xls, .csv)', 'error');
+                }
+            }
+        });
+
+        // Update file input change handler
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                updateDropAreaText(e.target.files[0].name);
+            }
+        });
+
+        // Function to update drop area text
+        function updateDropAreaText(filename) {
+            fileDropArea.innerHTML = `
+                <div>📄 ${filename}</div>
+                <div class="file-drop-text">Click to change file</div>
+            `;
+        }
+
+        // Upload form handler
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Please select a file', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('excelFile', file);
+            
+            // Auto-detect data type based on file name or content
+            let dataType = 'gazelle'; // default
+            if (file.name.toLowerCase().includes('shopify') || file.name.toLowerCase().endsWith('.csv')) {
+                dataType = 'shopify';
+            }
+            formData.append('dataType', dataType);
+
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Processing...';
+            showStatus('Uploading and processing file...', 'success');
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(result.message, 'success');
+                    fileInput.value = ''; // Clear file input
+                    loadUploadLog(); // Refresh the upload log
+                    loadRecords(); // Refresh the records table
+                } else {
+                    showStatus(result.error || 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload & Process';
+            }
+        });
+
+        // Refresh button handlers
+        refreshBtn.addEventListener('click', loadRecords);
+        refreshLogBtn.addEventListener('click', loadUploadLog);
+
+        // Show status message
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            // Hide status after 5 seconds for success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Load and display upload log
+        async function loadUploadLog() {
+            try {
+                uploadLogContainer.innerHTML = '<div class="loading">Loading upload history...</div>';
+                
+                const response = await fetch('/upload-log');
+                const logs = await response.json();
+
+                if (logs.length === 0) {
+                    uploadLogContainer.innerHTML = '<div class="no-records">No uploads recorded yet.</div>';
+                    logCount.textContent = '';
+                    return;
+                }
+
+                logCount.textContent = `${logs.length} upload${logs.length !== 1 ? 's' : ''} recorded`;
+
+                // Create table for upload log
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Filename</th>
+                            <th>Records Imported</th>
+                            <th>Upload Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${logs.map(log => `
+                            <tr>
+                                <td>${log.id}</td>
+                                <td>${log.filename}</td>
+                                <td>${log.records_count}</td>
+                                <td>${new Date(log.upload_date).toLocaleString()}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+
+                uploadLogContainer.innerHTML = '';
+                uploadLogContainer.appendChild(table);
+
+            } catch (error) {
+                uploadLogContainer.innerHTML = '<div class="no-records">Error loading upload history: ' + error.message + '</div>';
+                logCount.textContent = '';
+            }
+        }
+
+        // Load and display records
+        async function loadRecords() {
+            try {
+                recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
+                
+                const response = await fetch('/records');
+                const records = await response.json();
+
+                if (records.length === 0) {
+                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload an Excel file to get started!</div>';
+                    recordCount.textContent = '';
+                    return;
+                }
+
+                recordCount.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} found`;
+
+                // Create table
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Date</th>
+                            <th>Cus No</th>
+                            <th>Customer Name</th>
+                            <th>Title</th>
+                            <th>Book EAN</th>
+                            <th>Quantity</th>
+                            <th>Total</th>
+                            <th>Country</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${records.map(record => `
+                            <tr>
+                                <td>${record.id}</td>
+                                <td>${record.order_date ? new Date(record.order_date).toLocaleDateString() : '-'}</td>
+                                <td>${record.cus_no || '-'}</td>
+                                <td>${record.customer_name || '-'}</td>
+                                <td>${record.title || '-'}</td>
+                                <td>${record.book_ean || '-'}</td>
+                                <td>${record.quantity || '-'}</td>
+                                <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
+                                <td>${record.country || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+
+                recordsContainer.innerHTML = '';
+                recordsContainer.appendChild(table);
+
+            } catch (error) {
+                recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
+                recordCount.textContent = '';
+            }
+        }
+
+        // Load records and upload log when page loads
+        loadUploadLog();
+        loadRecords();
+    </script>
+</body>
+</html>
