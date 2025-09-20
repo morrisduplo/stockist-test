@@ -90,10 +90,11 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     const sheetName = workbook.SheetNames[0]; // Use first sheet
     const worksheet = workbook.Sheets[sheetName];
     
-    // Convert to JSON, skipping the first row (headers)
+    // Convert to JSON, starting from row 2 (skipping header row)
     const data = XLSX.utils.sheet_to_json(worksheet, { range: 1 });
     
-    console.log('Extracted data:', data.slice(0, 3)); // Log first 3 rows for debugging
+    console.log('Extracted data sample:', data.slice(0, 3)); // Log first 3 rows for debugging
+    console.log('Column headers:', Object.keys(data[0] || {})); // Log column names
     
     // Process and insert data
     const insertedRecords = [];
@@ -102,15 +103,21 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       // Skip empty rows
       if (!row || Object.keys(row).length === 0) continue;
       
+      // Get all column keys to understand the structure
+      const keys = Object.keys(row);
+      console.log('Processing row with keys:', keys);
+      console.log('Row data:', row);
+      
       // Map your specific Excel columns to database fields
+      // Based on your original Excel structure, adjust these mappings
       const record = {
-        order_date: parseDate(row['Orders for Antenne created on 19/09/2025']),
-        cus_no: row['__EMPTY_1'] || null, // Cus No column
-        customer_name: row['__EMPTY_2'] || 'Unknown', // Name column
-        title: row['__EMPTY_4'] || 'Unknown', // Title column
-        book_ean: row['__EMPTY_6'] || null, // Book EAN column
-        quantity: parseInt(row['__EMPTY_7']) || 0, // Quantity column
-        total: parseFloat(row['__EMPTY_8']) || 0 // TOTAL column
+        order_date: parseDate(row[keys[0]] || new Date()), // First column (Date)
+        cus_no: row[keys[2]] || null, // Third column (Cus No)
+        customer_name: row[keys[3]] || 'Unknown', // Fourth column (Customer Name)
+        title: row[keys[5]] || 'Unknown', // Sixth column (Title)
+        book_ean: row[keys[7]] || null, // Eighth column (Book EAN)
+        quantity: parseInt(row[keys[8]]) || 0, // Ninth column (Quantity)
+        total: parseFloat(row[keys[9]]) || 0 // Tenth column (Total)
       };
 
       const result = await pool.query(
