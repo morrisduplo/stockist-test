@@ -816,10 +816,7 @@
                                 <td>${record.quantity || '-'}</td>
                                 <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
                                 <td class="editable-cell" data-field="country">${record.country || '-'}</td>
-                                <td class="editable-cell" data-field="city">${record.city || 'London'}</td>
-                                <td>
-                                    <button class="btn-edit" onclick="editRecord(${record.id})">Edit</button>
-                                </td>
+                                <td class="editable-cell" data-field="city" onclick="editRecord(${record.id})">${record.city || 'London'}</td>
                             </tr>
                         `;
                     }).join('')}
