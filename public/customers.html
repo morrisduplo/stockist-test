@@ -686,6 +686,27 @@
             }
         }
 
+        // Handle checkbox changes
+        function handleCheckboxChange(e) {
+            const checkbox = e.target;
+            const customerId = checkbox.dataset.customer;
+            
+            if (checkbox.checked) {
+                selectedCustomers.add(customerId);
+            } else {
+                selectedCustomers.delete(customerId);
+            }
+            
+            updateSelectionCount();
+            updateDebug(`Customer ${customerId} ${checkbox.checked ? 'selected' : 'deselected'}`);
+        }
+
+        // Update selection count display
+        function updateSelectionCount() {
+            const count = selectedCustomers.size;
+            selectionCount.textContent = `${count} selected`;
+        }
+
         // Make cell editable
         function makeEditable(e) {
             const cell = e.target;
