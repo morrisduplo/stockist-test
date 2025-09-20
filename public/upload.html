@@ -183,6 +183,17 @@
             background: #333333;
         }
 
+        .clear-btn {
+            background: #dc3545;
+            font-size: 14px;
+            padding: 8px 16px;
+            margin-right: 10px;
+        }
+
+        .clear-btn:hover {
+            background: #c82333;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -274,6 +285,7 @@
                     <h2>Stored Records</h2>
                     <div>
                         <span id="recordCount" class="record-count"></span>
+                        <button id="clearDataBtn" class="clear-btn">Clear All Data</button>
                         <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
                     </div>
                 </div>
@@ -298,6 +310,7 @@
         const uploadLogContainer = document.getElementById('uploadLogContainer');
         const refreshLogBtn = document.getElementById('refreshLogBtn');
         const logCount = document.getElementById('logCount');
+        const clearDataBtn = document.getElementById('clearDataBtn');
 
         // Drag and drop functionality
         fileDropArea.addEventListener('click', () => fileInput.click());
@@ -377,6 +390,11 @@
                 if (response.ok) {
                     showStatus(result.message, 'success');
                     fileInput.value = ''; // Clear file input
+                    // Reset drop area text
+                    fileDropArea.innerHTML = `
+                        <div>📁 Drop Excel or CSV file here or click to browse</div>
+                        <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
+                    `;
                     loadUploadLog(); // Refresh the upload log
                     loadRecords(); // Refresh the records table
                 } else {
@@ -393,6 +411,35 @@
         // Refresh button handlers
         refreshBtn.addEventListener('click', loadRecords);
         refreshLogBtn.addEventListener('click', loadUploadLog);
+
+        // Clear data button handler
+        clearDataBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to delete ALL data? This cannot be undone!')) {
+                try {
+                    clearDataBtn.disabled = true;
+                    clearDataBtn.textContent = 'Clearing...';
+                    
+                    const response = await fetch('/clear-data', {
+                        method: 'POST'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        showStatus(result.message, 'success');
+                        loadRecords(); // Refresh the table
+                        loadUploadLog(); // Refresh upload log
+                    } else {
+                        showStatus(result.error, 'error');
+                    }
+                } catch (error) {
+                    showStatus('Error clearing data: ' + error.message, 'error');
+                } finally {
+                    clearDataBtn.disabled = false;
+                    clearDataBtn.textContent = 'Clear All Data';
+                }
+            }
+        });
 
         // Show status message
         function showStatus(message, type) {
