@@ -41,11 +41,13 @@ async function initDatabase() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255),
-        date_value DATE,
-        amount DECIMAL(10,2),
-        category VARCHAR(100),
-        notes TEXT,
+        order_date DATE,
+        cus_no VARCHAR(50),
+        customer_name VARCHAR(255),
+        title VARCHAR(500),
+        book_ean VARCHAR(20),
+        quantity INTEGER,
+        total DECIMAL(10,2),
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -74,27 +76,32 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     const sheetName = workbook.SheetNames[0]; // Use first sheet
     const worksheet = workbook.Sheets[sheetName];
     
-    // Convert to JSON
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    // Convert to JSON, skipping the first row (headers)
+    const data = XLSX.utils.sheet_to_json(worksheet, { range: 1 });
     
-    console.log('Extracted data:', data);
+    console.log('Extracted data:', data.slice(0, 3)); // Log first 3 rows for debugging
     
     // Process and insert data
     const insertedRecords = [];
     
     for (const row of data) {
-      // This is a generic mapping - you'll customize this for your specific Excel formats
+      // Skip empty rows
+      if (!row || Object.keys(row).length === 0) continue;
+      
+      // Map your specific Excel columns to database fields
       const record = {
-        name: row['Name'] || row['Title'] || row['Product'] || Object.values(row)[0] || 'Unknown',
-        date_value: parseDate(row['Date'] || row['Created'] || new Date()),
-        amount: parseFloat(row['Amount'] || row['Price'] || row['Value'] || 0),
-        category: row['Category'] || row['Type'] || 'General',
-        notes: row['Notes'] || row['Description'] || ''
+        order_date: parseDate(row['Orders for Antenne created on 19/09/2025']),
+        cus_no: row['__EMPTY_1'] || null, // Cus No column
+        customer_name: row['__EMPTY_2'] || 'Unknown', // Name column
+        title: row['__EMPTY_4'] || 'Unknown', // Title column
+        book_ean: row['__EMPTY_6'] || null, // Book EAN column
+        quantity: parseInt(row['__EMPTY_7']) || 0, // Quantity column
+        total: parseFloat(row['__EMPTY_8']) || 0 // TOTAL column
       };
 
       const result = await pool.query(
-        'INSERT INTO records (name, date_value, amount, category, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [record.name, record.date_value, record.amount, record.category, record.notes]
+        'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total]
       );
       
       insertedRecords.push(result.rows[0]);
