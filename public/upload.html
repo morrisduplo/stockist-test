@@ -30,7 +30,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             padding: 30px;
@@ -115,14 +115,6 @@
             margin-top: 5px;
         }
 
-        input[type="file"] {
-            flex: 1;
-            padding: 10px;
-            border: 2px dashed #bdc3c7;
-            border-radius: 5px;
-            background: white;
-        }
-
         button {
             background: #000000;
             color: white;
@@ -141,6 +133,29 @@
         button:disabled {
             background: #bdc3c7;
             cursor: not-allowed;
+        }
+
+        .btn-edit {
+            background: #17a2b8;
+            font-size: 12px;
+            padding: 4px 8px;
+        }
+
+        .btn-edit:hover {
+            background: #138496;
+        }
+
+        .btn-save {
+            background: #28a745;
+            font-size: 12px;
+            padding: 4px 8px;
+            margin-right: 5px;
+        }
+
+        .btn-cancel {
+            background: #6c757d;
+            font-size: 12px;
+            padding: 4px 8px;
         }
 
         .status {
@@ -173,6 +188,12 @@
             margin-bottom: 20px;
         }
 
+        .records-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
         .refresh-btn {
             background: #000000;
             font-size: 14px;
@@ -194,17 +215,38 @@
             background: #c82333;
         }
 
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        input[type="text"], select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
-            font-size: 12px;
+            font-size: 11px;
         }
 
         th, td {
-            padding: 2px 8px;
+            padding: 4px 6px;
             text-align: left;
-            border: none;
+            border-bottom: 1px solid #eee;
             line-height: 1.2;
         }
 
@@ -213,12 +255,45 @@
             color: white;
             font-weight: normal;
             font-family: 'Courier', monospace;
-            font-size: 14px;
+            font-size: 10px;
             text-transform: uppercase;
+            position: sticky;
+            top: 0;
         }
 
         tr:hover {
             background-color: #f5f5f5;
+        }
+
+        .unknown-customer {
+            background-color: #fff3cd !important;
+        }
+
+        .unknown-customer:hover {
+            background-color: #ffeaa7 !important;
+        }
+
+        .editable-cell {
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 2px;
+            min-width: 100px;
+        }
+
+        .editable-cell:hover {
+            background-color: #e9ecef;
+        }
+
+        .editing {
+            background-color: #d4edda !important;
+        }
+
+        .edit-input {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #28a745;
+            border-radius: 2px;
+            font-size: 11px;
         }
 
         .loading {
@@ -238,6 +313,52 @@
         .record-count {
             color: #7f8c8d;
             font-size: 14px;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 600px;
+        }
+
+        .modal h3 {
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
     </style>
 </head>
@@ -283,17 +404,81 @@
             <div style="margin-top: 40px;">
                 <div class="records-header">
                     <h2>Stored Records</h2>
-                    <div>
+                    <div class="records-controls">
                         <span id="recordCount" class="record-count"></span>
                         <button id="clearDataBtn" class="clear-btn">Clear All Data</button>
                         <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
                     </div>
+                </div>
+
+                <!-- Filter Controls -->
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label>Search:</label>
+                        <input type="text" id="searchInput" placeholder="Search records...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Customer:</label>
+                        <select id="customerFilter">
+                            <option value="">All Customers</option>
+                            <option value="Unknown">Unknown Only</option>
+                            <option value="Known">Known Only</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Country:</label>
+                        <select id="countryFilter">
+                            <option value="">All Countries</option>
+                        </select>
+                    </div>
+                    <button id="filterBtn" class="refresh-btn">Apply Filters</button>
                 </div>
                 
                 <div id="recordsContainer">
                     <div class="loading">Loading records...</div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Edit Record Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h3>Edit Record</h3>
+            <form id="editForm">
+                <div class="form-group">
+                    <label for="editCustomerName">Customer Name:</label>
+                    <input type="text" id="editCustomerName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editCity">City:</label>
+                    <input type="text" id="editCity" placeholder="Enter city name">
+                </div>
+                <div class="form-group">
+                    <label for="editCountry">Country:</label>
+                    <select id="editCountry">
+                        <option value="UK">UK</option>
+                        <option value="US">US</option>
+                        <option value="Germany">Germany</option>
+                        <option value="France">France</option>
+                        <option value="Italy">Italy</option>
+                        <option value="Spain">Spain</option>
+                        <option value="Netherlands">Netherlands</option>
+                        <option value="Belgium">Belgium</option>
+                        <option value="Austria">Austria</option>
+                        <option value="Switzerland">Switzerland</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editTitle">Product Title:</label>
+                    <input type="text" id="editTitle">
+                </div>
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="btn-save">Save Changes</button>
+                    <button type="button" id="cancelEdit" class="btn-cancel">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -311,6 +496,17 @@
         const refreshLogBtn = document.getElementById('refreshLogBtn');
         const logCount = document.getElementById('logCount');
         const clearDataBtn = document.getElementById('clearDataBtn');
+        const searchInput = document.getElementById('searchInput');
+        const customerFilter = document.getElementById('customerFilter');
+        const countryFilter = document.getElementById('countryFilter');
+        const filterBtn = document.getElementById('filterBtn');
+        const editModal = document.getElementById('editModal');
+        const editForm = document.getElementById('editForm');
+        const cancelEdit = document.getElementById('cancelEdit');
+
+        let allRecords = [];
+        let filteredRecords = [];
+        let currentEditingId = null;
 
         // Drag and drop functionality
         fileDropArea.addEventListener('click', () => fileInput.click());
@@ -408,9 +604,14 @@
             }
         });
 
-        // Refresh button handlers
+        // Event listeners
         refreshBtn.addEventListener('click', loadRecords);
         refreshLogBtn.addEventListener('click', loadUploadLog);
+        filterBtn.addEventListener('click', applyFilters);
+        searchInput.addEventListener('input', applyFilters);
+        customerFilter.addEventListener('change', applyFilters);
+        countryFilter.addEventListener('change', applyFilters);
+        cancelEdit.addEventListener('click', closeEditModal);
 
         // Clear data button handler
         clearDataBtn.addEventListener('click', async () => {
@@ -439,6 +640,12 @@
                     clearDataBtn.textContent = 'Clear All Data';
                 }
             }
+        });
+
+        // Edit form handler
+        editForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await saveRecord();
         });
 
         // Show status message
@@ -509,57 +716,194 @@
                 recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
                 
                 const response = await fetch('/records');
-                const records = await response.json();
+                allRecords = await response.json();
 
-                if (records.length === 0) {
-                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload an Excel file to get started!</div>';
-                    recordCount.textContent = '';
-                    return;
-                }
-
-                recordCount.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} found`;
-
-                // Create table
-                const table = document.createElement('table');
-                table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Date</th>
-                            <th>Cus No</th>
-                            <th>Customer Name</th>
-                            <th>Title</th>
-                            <th>Book EAN</th>
-                            <th>Quantity</th>
-                            <th>Total</th>
-                            <th>Country</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${records.map(record => `
-                            <tr>
-                                <td>${record.id}</td>
-                                <td>${record.order_date ? new Date(record.order_date).toLocaleDateString() : '-'}</td>
-                                <td>${record.cus_no || '-'}</td>
-                                <td>${record.customer_name || '-'}</td>
-                                <td>${record.title || '-'}</td>
-                                <td>${record.book_ean || '-'}</td>
-                                <td>${record.quantity || '-'}</td>
-                                <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
-                                <td>${record.country || '-'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                `;
-
-                recordsContainer.innerHTML = '';
-                recordsContainer.appendChild(table);
+                // Update country filter
+                updateCountryFilter();
+                
+                // Apply current filters
+                applyFilters();
 
             } catch (error) {
                 recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
                 recordCount.textContent = '';
             }
         }
+
+        // Update country filter options
+        function updateCountryFilter() {
+            const countries = [...new Set(allRecords.map(r => r.country).filter(c => c))].sort();
+            const currentValue = countryFilter.value;
+            
+            countryFilter.innerHTML = '<option value="">All Countries</option>';
+            countries.forEach(country => {
+                const option = document.createElement('option');
+                option.value = country;
+                option.textContent = country;
+                countryFilter.appendChild(option);
+            });
+            
+            countryFilter.value = currentValue;
+        }
+
+        // Apply filters to records
+        function applyFilters() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const customerFilterValue = customerFilter.value;
+            const countryFilterValue = countryFilter.value;
+
+            filteredRecords = allRecords.filter(record => {
+                // Search filter
+                const matchesSearch = !searchTerm || 
+                    (record.customer_name && record.customer_name.toLowerCase().includes(searchTerm)) ||
+                    (record.title && record.title.toLowerCase().includes(searchTerm)) ||
+                    record.id.toString().includes(searchTerm);
+
+                // Customer filter
+                const matchesCustomer = !customerFilterValue ||
+                    (customerFilterValue === 'Unknown' && (!record.customer_name || record.customer_name === 'Unknown' || record.customer_name.includes('Unknown'))) ||
+                    (customerFilterValue === 'Known' && record.customer_name && !record.customer_name.includes('Unknown'));
+
+                // Country filter
+                const matchesCountry = !countryFilterValue || record.country === countryFilterValue;
+
+                return matchesSearch && matchesCustomer && matchesCountry;
+            });
+
+            displayRecords();
+        }
+
+        // Display filtered records
+        function displayRecords() {
+            if (filteredRecords.length === 0) {
+                if (allRecords.length === 0) {
+                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload an Excel file to get started!</div>';
+                } else {
+                    recordsContainer.innerHTML = '<div class="no-records">No records match your filters.</div>';
+                }
+                recordCount.textContent = '';
+                return;
+            }
+
+            recordCount.textContent = `${filteredRecords.length} record${filteredRecords.length !== 1 ? 's' : ''} found (${allRecords.length} total)`;
+
+            // Create table
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date</th>
+                        <th>Customer Name</th>
+                        <th>Title</th>
+                        <th>EAN</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                        <th>Country</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredRecords.map(record => {
+                        const isUnknown = !record.customer_name || record.customer_name === 'Unknown' || record.customer_name.includes('Unknown');
+                        return `
+                            <tr class="${isUnknown ? 'unknown-customer' : ''}" data-id="${record.id}">
+                                <td>${record.id}</td>
+                                <td>${record.order_date ? new Date(record.order_date).toLocaleDateString() : '-'}</td>
+                                <td class="editable-cell" data-field="customer_name">${record.customer_name || 'Unknown'}</td>
+                                <td class="editable-cell" data-field="title">${record.title || '-'}</td>
+                                <td>${record.book_ean || '-'}</td>
+                                <td>${record.quantity || '-'}</td>
+                                <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
+                                <td class="editable-cell" data-field="country">${record.country || '-'}</td>
+                                <td class="editable-cell" data-field="city">${record.city || 'London'}</td>
+                                <td>
+                                    <button class="btn-edit" onclick="editRecord(${record.id})">Edit</button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            `;
+
+            recordsContainer.innerHTML = '';
+            recordsContainer.appendChild(table);
+        }
+
+        // Edit record function
+        function editRecord(id) {
+            const record = allRecords.find(r => r.id === id);
+            if (!record) return;
+
+            currentEditingId = id;
+            
+            // Populate form
+            document.getElementById('editCustomerName').value = record.customer_name || '';
+            document.getElementById('editCountry').value = record.country || 'UK';
+            document.getElementById('editCity').value = record.city || 'London';
+            document.getElementById('editTitle').value = record.title || '';
+
+            // Show modal
+            editModal.style.display = 'block';
+        }
+
+        // Close edit modal
+        function closeEditModal() {
+            editModal.style.display = 'none';
+            currentEditingId = null;
+        }
+
+        // Save record changes
+        async function saveRecord() {
+            if (!currentEditingId) return;
+
+            const customerName = document.getElementById('editCustomerName').value.trim();
+            const country = document.getElementById('editCountry').value;
+            const city = document.getElementById('editCity').value.trim() || 'London';
+            const title = document.getElementById('editTitle').value.trim();
+
+            if (!customerName) {
+                alert('Customer name is required');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/update-record', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: currentEditingId,
+                        customer_name: customerName,
+                        country: country,
+                        city: city,
+                        title: title
+                    })
+                });
+
+                if (response.ok) {
+                    showStatus('Record updated successfully', 'success');
+                    closeEditModal();
+                    loadRecords(); // Refresh the data
+                } else {
+                    const error = await response.json();
+                    showStatus('Error updating record: ' + error.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target === editModal) {
+                closeEditModal();
+            }
+        });
+
+        // Make editRecord globally available
+        window.editRecord = editRecord;
 
         // Load records and upload log when page loads
         loadUploadLog();
