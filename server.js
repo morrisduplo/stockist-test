@@ -146,6 +146,31 @@ app.post('/api/customers/update', async (req, res) => {
   }
 });
 
+// Clear all data endpoint
+app.post('/clear-data', async (req, res) => {
+  try {
+    console.log('Clear data endpoint called');
+    
+    // Clear all records
+    const recordsResult = await pool.query('DELETE FROM records');
+    console.log('Records deleted:', recordsResult.rowCount);
+    
+    // Clear upload log
+    const logResult = await pool.query('DELETE FROM upload_log');
+    console.log('Upload log deleted:', logResult.rowCount);
+    
+    // Reset sequences (optional)
+    await pool.query('ALTER SEQUENCE records_id_seq RESTART WITH 1');
+    await pool.query('ALTER SEQUENCE upload_log_id_seq RESTART WITH 1');
+    
+    console.log('Data cleared successfully');
+    res.json({ message: 'All data cleared successfully' });
+  } catch (error) {
+    console.error('Clear data error:', error);
+    res.status(500).json({ error: 'Failed to clear data: ' + error.message });
+  }
+});
+
 // Upload and process Excel/CSV file
 app.post('/upload', upload.single('excelFile'), async (req, res) => {
   try {
@@ -230,14 +255,43 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-// NEW: Improved Shopify data processing function
+// IMPROVED: Shopify data processing function with debugging
 function processShopifyData(rawData) {
-  console.log('Starting Shopify data processing...');
+  console.log('=== DEBUGGING CSV PROCESSING ===');
+  console.log('Raw data length:', rawData.length);
   
-  // Step 1: Group data by order number and collect customer info
+  // Print all available columns
+  const columns = Object.keys(rawData[0] || {});
+  console.log('Available columns:', columns);
+  
+  // Look for customer-related columns
+  const customerColumns = columns.filter(col => 
+    col.toLowerCase().includes('name') || 
+    col.toLowerCase().includes('company') || 
+    col.toLowerCase().includes('billing') ||
+    col.toLowerCase().includes('shipping')
+  );
+  console.log('Customer-related columns:', customerColumns);
+  
+  // Show sample data for first few rows
+  console.log('=== SAMPLE ROWS ===');
+  rawData.slice(0, 3).forEach((row, i) => {
+    console.log(`Row ${i + 1}:`);
+    console.log('  Order Number (Name):', row['Name']);
+    console.log('  Billing Name:', row['Billing Name']);
+    console.log('  Shipping Name:', row['Shipping Name']);
+    console.log('  Billing Company:', row['Billing Company']);
+    console.log('  Shipping Company:', row['Shipping Company']);
+    console.log('  Billing Country:', row['Billing Country']);
+    console.log('  Shipping Country:', row['Shipping Country']);
+    console.log('  Lineitem name:', row['Lineitem name']);
+    console.log('  Lineitem quantity:', row['Lineitem quantity']);
+    console.log('---');
+  });
+  
+  // Step 1: Group data by order number
   const orderGroups = new Map();
   
-  // First pass: collect all order data and find customer names
   rawData.forEach((row, index) => {
     const orderNumber = row['Name'];
     if (!orderNumber) {
@@ -250,6 +304,7 @@ function processShopifyData(rawData) {
       orderGroups.set(orderNumber, {
         customerInfo: {
           name: null,
+          company: null,
           country: null
         },
         lineItems: []
@@ -258,35 +313,32 @@ function processShopifyData(rawData) {
     
     const order = orderGroups.get(orderNumber);
     
-    // Try to extract customer information from various fields
-    if (!order.customerInfo.name) {
-      const possibleNameFields = [
-        'Billing Name',
-        'Shipping Name', 
-        'Name' // Sometimes the customer name might be in a different field
-      ];
-      
-      for (const field of possibleNameFields) {
-        if (row[field] && row[field].trim() && row[field] !== orderNumber) {
-          order.customerInfo.name = row[field].trim();
-          console.log(`Found customer name "${order.customerInfo.name}" for order ${orderNumber}`);
-          break;
-        }
+    // Try to extract customer information - prioritize company names for B2B
+    if (!order.customerInfo.name && !order.customerInfo.company) {
+      // Check for company fields first (better for B2B)
+      if (row['Billing Company'] && row['Billing Company'].trim()) {
+        order.customerInfo.company = row['Billing Company'].trim();
+        order.customerInfo.name = row['Billing Company'].trim();
+        console.log(`Found company "${order.customerInfo.company}" for order ${orderNumber}`);
+      } else if (row['Shipping Company'] && row['Shipping Company'].trim()) {
+        order.customerInfo.company = row['Shipping Company'].trim();
+        order.customerInfo.name = row['Shipping Company'].trim();
+        console.log(`Found shipping company "${order.customerInfo.company}" for order ${orderNumber}`);
+      } else if (row['Billing Name'] && row['Billing Name'].trim()) {
+        order.customerInfo.name = row['Billing Name'].trim();
+        console.log(`Found billing name "${order.customerInfo.name}" for order ${orderNumber}`);
+      } else if (row['Shipping Name'] && row['Shipping Name'].trim()) {
+        order.customerInfo.name = row['Shipping Name'].trim();
+        console.log(`Found shipping name "${order.customerInfo.name}" for order ${orderNumber}`);
       }
     }
     
-    // Try to extract country information
+    // Extract country information
     if (!order.customerInfo.country) {
-      const possibleCountryFields = [
-        'Billing Country',
-        'Shipping Country'
-      ];
-      
-      for (const field of possibleCountryFields) {
-        if (row[field] && row[field].trim()) {
-          order.customerInfo.country = row[field].trim();
-          break;
-        }
+      if (row['Billing Country'] && row['Billing Country'].trim()) {
+        order.customerInfo.country = row['Billing Country'].trim();
+      } else if (row['Shipping Country'] && row['Shipping Country'].trim()) {
+        order.customerInfo.country = row['Shipping Country'].trim();
       }
     }
     
@@ -296,16 +348,28 @@ function processShopifyData(rawData) {
     }
   });
   
+  console.log(`=== ORDER SUMMARY ===`);
   console.log(`Processed ${orderGroups.size} unique orders`);
   
-  // Step 2: Create records for each line item with customer info
+  // Debug each order
+  let orderCount = 0;
+  orderGroups.forEach((order, orderNumber) => {
+    orderCount++;
+    if (orderCount <= 5) { // Show first 5 orders for debugging
+      console.log(`Order ${orderNumber}:`);
+      console.log(`  Customer: "${order.customerInfo.name || 'NOT FOUND'}"`);
+      console.log(`  Company: "${order.customerInfo.company || 'NOT FOUND'}"`);
+      console.log(`  Country: "${order.customerInfo.country || 'NOT FOUND'}"`);
+      console.log(`  Line Items: ${order.lineItems.length}`);
+    }
+  });
+  
+  // Step 2: Create records for each line item
   const processedRecords = [];
   
   orderGroups.forEach((order, orderNumber) => {
-    const customerName = order.customerInfo.name || 'Unknown Customer';
+    const customerName = order.customerInfo.name || order.customerInfo.company || 'Unknown Customer';
     const country = order.customerInfo.country || 'Unknown';
-    
-    console.log(`Order ${orderNumber}: Customer="${customerName}", Country="${country}", Items=${order.lineItems.length}`);
     
     order.lineItems.forEach((item) => {
       const quantity = parseInt(item['Lineitem quantity']) || 0;
@@ -314,7 +378,7 @@ function processShopifyData(rawData) {
       
       const record = {
         order_date: parseDate(item['Created at']),
-        cus_no: null, // No customer number in Shopify exports
+        cus_no: null,
         customer_name: customerName,
         title: item['Lineitem name'] || 'Unknown Product',
         book_ean: item['Lineitem sku'] || null,
@@ -327,7 +391,19 @@ function processShopifyData(rawData) {
     });
   });
   
+  console.log(`=== FINAL RESULTS ===`);
   console.log(`Created ${processedRecords.length} processed records`);
+  
+  // Show first few processed records
+  processedRecords.slice(0, 3).forEach((record, i) => {
+    console.log(`Processed Record ${i + 1}:`);
+    console.log(`  Customer: "${record.customer_name}"`);
+    console.log(`  Country: "${record.country}"`);
+    console.log(`  Product: "${record.title}"`);
+    console.log(`  Quantity: ${record.quantity}`);
+    console.log('---');
+  });
+  
   return processedRecords;
 }
 
