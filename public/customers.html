@@ -15,6 +15,150 @@
             box-sizing: border-box;
         }
 
+        // Handle checkbox changes
+        function handleCheckboxChange(e) {
+            const checkbox = e.target;
+            const customerId = checkbox.dataset.customer;
+            
+            if (checkbox.checked) {
+                selectedCustomers.add(customerId);
+            } else {
+                selectedCustomers.delete(customerId);
+            }
+            
+            updateSelectionCount();
+            updateDebug(`Customer ${customerId} ${checkbox.checked ? 'selected' : 'deselected'}`);
+        }
+
+        // Update selection count display
+        function updateSelectionCount() {
+            const count = selectedCustomers.size;
+            selectionCount.textContent = `${count} selected`;
+        }
+
+        // Select all visible customers
+        function selectAll() {
+            selectedCustomers.clear();
+            filteredData.forEach(customer => {
+                selectedCustomers.add(customer.customer_name);
+            });
+            
+            // Update checkboxes
+            document.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+            
+            updateSelectionCount();
+            updateDebug(`Selected all ${filteredData.length} visible customers`);
+        }
+
+        // Deselect all customers
+        function deselectAll() {
+            selectedCustomers.clear();
+            
+            // Update checkboxes
+            document.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            updateSelectionCount();
+            updateDebug('Deselected all customers');
+        }
+
+        // Exclude selected customers
+        async function excludeSelected() {
+            if (selectedCustomers.size === 0) {
+                alert('Please select at least one customer to exclude.');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to exclude ${selectedCustomers.size} customer(s) from future reports?`)) {
+                return;
+            }
+
+            try {
+                const customerList = Array.from(selectedCustomers);
+                updateDebug(`Excluding customers: ${customerList.join(', ')}`);
+
+                const response = await fetch('/api/customers/exclude', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        customers: customerList,
+                        excluded: true
+                    })
+                });
+
+                if (response.ok) {
+                    // Update local data
+                    customersData.forEach(customer => {
+                        if (selectedCustomers.has(customer.customer_name)) {
+                            customer.excluded = true;
+                        }
+                    });
+
+                    deselectAll();
+                    displayCustomers();
+                    updateDebug(`Successfully excluded ${customerList.length} customers`);
+                    alert(`Successfully excluded ${customerList.length} customer(s)`);
+                } else {
+                    throw new Error('Failed to exclude customers');
+                }
+            } catch (error) {
+                alert('Error excluding customers: ' + error.message);
+                updateDebug(`Error excluding customers: ${error.message}`);
+            }
+        }
+
+        // Include selected customers
+        async function includeSelected() {
+            if (selectedCustomers.size === 0) {
+                alert('Please select at least one customer to include.');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to include ${selectedCustomers.size} customer(s) in future reports?`)) {
+                return;
+            }
+
+            try {
+                const customerList = Array.from(selectedCustomers);
+                updateDebug(`Including customers: ${customerList.join(', ')}`);
+
+                const response = await fetch('/api/customers/exclude', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        customers: customerList,
+                        excluded: false
+                    })
+                });
+
+                if (response.ok) {
+                    // Update local data
+                    customersData.forEach(customer => {
+                        if (selectedCustomers.has(customer.customer_name)) {
+                            customer.excluded = false;
+                        }
+                    });
+
+                    deselectAll();
+                    displayCustomers();
+                    updateDebug(`Successfully included ${customerList.length} customers`);
+                    alert(`Successfully included ${customerList.length} customer(s)`);
+                } else {
+                    throw new Error('Failed to include customers');
+                }
+            } catch (error) {
+                alert('Error including customers: ' + error.message);
+                updateDebug(`Error including customers: ${error.message}`);
+            }
+        }
+
         body {
             font-family: 'Courier', monospace;
             line-height: 1.6;
@@ -198,11 +342,50 @@
             border: 1px solid #f5c6cb;
         }
 
-        .no-data {
+        .checkbox-cell {
             text-align: center;
-            padding: 40px;
-            color: #7f8c8d;
-            font-style: italic;
+            width: 80px;
+        }
+
+        .exclusion-checkbox {
+            cursor: pointer;
+            transform: scale(1.2);
+        }
+
+        .excluded-row {
+            background-color: #fff3cd !important;
+            opacity: 0.7;
+        }
+
+        .excluded-row:hover {
+            background-color: #fff3cd !important;
+        }
+
+        .bulk-actions {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .exclusion-status {
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .excluded {
+            background: #ffeaa7;
+            color: #636e72;
+        }
+
+        .included {
+            background: #55a3ff;
+            color: white;
         }
     </style>
 </head>
@@ -257,6 +440,14 @@
             <button id="debugBtn" style="background: #17a2b8;">Toggle Debug</button>
         </div>
 
+        <div class="bulk-actions">
+            <button id="selectAllBtn">Select All</button>
+            <button id="deselectAllBtn">Deselect All</button>
+            <button id="excludeSelectedBtn" style="background: #e74c3c;">Exclude Selected</button>
+            <button id="includeSelectedBtn" style="background: #27ae60;">Include Selected</button>
+            <span id="selectionCount" style="margin-left: 20px; font-weight: bold;">0 selected</span>
+        </div>
+
         <div id="customersContainer">
             <div class="loading">Loading customer data...</div>
         </div>
@@ -277,16 +468,26 @@
         const debugContent = document.getElementById('debugContent');
         const errorMessage = document.getElementById('errorMessage');
         const errorText = document.getElementById('errorText');
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const deselectAllBtn = document.getElementById('deselectAllBtn');
+        const excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
+        const includeSelectedBtn = document.getElementById('includeSelectedBtn');
+        const selectionCount = document.getElementById('selectionCount');
 
         let customersData = [];
         let filteredData = [];
         let debugMode = false;
+        let selectedCustomers = new Set();
 
         // Event listeners
         refreshBtn.addEventListener('click', loadCustomers);
         debugBtn.addEventListener('click', toggleDebug);
         searchBox.addEventListener('input', filterCustomers);
         countryFilter.addEventListener('change', filterCustomers);
+        selectAllBtn.addEventListener('click', selectAll);
+        deselectAllBtn.addEventListener('click', deselectAll);
+        excludeSelectedBtn.addEventListener('click', excludeSelected);
+        includeSelectedBtn.addEventListener('click', includeSelected);
 
         function toggleDebug() {
             debugMode = !debugMode;
@@ -423,6 +624,8 @@
                 table.innerHTML = `
                     <thead>
                         <tr>
+                            <th>Exclusion</th>
+                            <th>Status</th>
                             <th>Customer Name</th>
                             <th>Country</th>
                             <th>Total Orders</th>
@@ -432,16 +635,31 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${filteredData.map(customer => `
-                            <tr>
-                                <td>${customer.customer_name || 'N/A'}</td>
-                                <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
-                                <td>${customer.total_orders || 0}</td>
-                                <td>${customer.total_quantity || 0}</td>
-                                <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
-                                <td>${customer.last_order ? new Date(customer.last_order).toLocaleDateString() : 'N/A'}</td>
-                            </tr>
-                        `).join('')}
+                        ${filteredData.map(customer => {
+                            const isExcluded = customer.excluded || false;
+                            const customerId = customer.customer_name;
+                            return `
+                                <tr class="${isExcluded ? 'excluded-row' : ''}" data-customer="${customerId}">
+                                    <td class="checkbox-cell">
+                                        <input type="checkbox" 
+                                               class="exclusion-checkbox" 
+                                               data-customer="${customerId}"
+                                               ${selectedCustomers.has(customerId) ? 'checked' : ''}>
+                                    </td>
+                                    <td>
+                                        <span class="exclusion-status ${isExcluded ? 'excluded' : 'included'}">
+                                            ${isExcluded ? 'EXCLUDED' : 'INCLUDED'}
+                                        </span>
+                                    </td>
+                                    <td>${customer.customer_name || 'N/A'}</td>
+                                    <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
+                                    <td>${customer.total_orders || 0}</td>
+                                    <td>${customer.total_quantity || 0}</td>
+                                    <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
+                                    <td>${customer.last_order ? new Date(customer.last_order).toLocaleDateString() : 'N/A'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 `;
 
@@ -450,9 +668,15 @@
                     cell.addEventListener('click', makeEditable);
                 });
 
+                // Add change handlers for checkboxes
+                table.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('change', handleCheckboxChange);
+                });
+
                 customersContainer.innerHTML = '';
                 customersContainer.appendChild(table);
                 
+                updateSelectionCount();
                 updateDebug(`Displayed ${filteredData.length} customers in table`);
 
             } catch (error) {
