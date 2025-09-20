@@ -38,6 +38,10 @@ const upload = multer({
 // Initialize database table
 async function initDatabase() {
   try {
+    // Drop the old table and create the new one with correct structure
+    await pool.query('DROP TABLE IF EXISTS records');
+    await pool.query('DROP TABLE IF EXISTS upload_log');
+    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
