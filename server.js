@@ -37,10 +37,10 @@ const upload = multer({
   }
 });
 
-// Initialize database table
+// Initialize database tables
 async function initDatabase() {
   try {
-    // Create tables if they don't exist (don't drop existing data)
+    // Create records table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -56,12 +56,23 @@ async function initDatabase() {
       )
     `);
     
+    // Create upload_log table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS upload_log (
         id SERIAL PRIMARY KEY,
         filename VARCHAR(255),
         records_count INTEGER,
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create customer_exclusions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customer_exclusions (
+        id SERIAL PRIMARY KEY,
+        customer_name VARCHAR(255) UNIQUE,
+        excluded BOOLEAN DEFAULT false,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
@@ -91,20 +102,25 @@ app.get('/customers', (req, res) => {
 // API endpoint to get customer data with statistics
 app.get('/api/customers', async (req, res) => {
   try {
-    // Get customer statistics
+    console.log('Customer API endpoint called');
+    
+    // Get customer statistics with exclusion status
     const customerStats = await pool.query(`
       SELECT 
-        customer_name,
-        country,
+        r.customer_name,
+        r.country,
         COUNT(*) as total_orders,
-        SUM(quantity) as total_quantity,
-        SUM(total) as total_revenue,
-        MAX(order_date) as last_order
-      FROM records 
-      WHERE customer_name != 'Unknown'
-      GROUP BY customer_name, country
+        SUM(r.quantity) as total_quantity,
+        SUM(r.total) as total_revenue,
+        MAX(r.order_date) as last_order,
+        COALESCE(ce.excluded, false) as excluded
+      FROM records r
+      LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+      GROUP BY r.customer_name, r.country, ce.excluded
       ORDER BY total_revenue DESC
     `);
+
+    console.log(`Customer stats query returned ${customerStats.rows.length} customers`);
 
     // Get overall statistics
     const overallStats = await pool.query(`
@@ -113,17 +129,23 @@ app.get('/api/customers', async (req, res) => {
         COUNT(DISTINCT country) as total_countries,
         COUNT(*) as total_orders,
         SUM(total) as total_revenue
-      FROM records 
-      WHERE customer_name != 'Unknown'
+      FROM records
     `);
+
+    console.log('Overall stats:', overallStats.rows[0]);
 
     res.json({
       customers: customerStats.rows,
-      stats: overallStats.rows[0]
+      stats: overallStats.rows[0] || {
+        total_customers: 0,
+        total_countries: 0,
+        total_orders: 0,
+        total_revenue: 0
+      }
     });
   } catch (error) {
-    console.error('Customer data error:', error);
-    res.status(500).json({ error: 'Failed to fetch customer data' });
+    console.error('Customer API error:', error);
+    res.status(500).json({ error: 'Failed to fetch customer data: ' + error.message });
   }
 });
 
@@ -146,6 +168,31 @@ app.post('/api/customers/update', async (req, res) => {
   }
 });
 
+// API endpoint to handle customer exclusions
+app.post('/api/customers/exclude', async (req, res) => {
+  try {
+    const { customers, excluded } = req.body;
+    
+    console.log(`${excluded ? 'Excluding' : 'Including'} customers:`, customers);
+    
+    // Update exclusion status for each customer
+    for (const customerName of customers) {
+      await pool.query(`
+        INSERT INTO customer_exclusions (customer_name, excluded, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (customer_name) 
+        DO UPDATE SET excluded = $2, updated_at = CURRENT_TIMESTAMP
+      `, [customerName, excluded]);
+    }
+    
+    console.log(`Successfully ${excluded ? 'excluded' : 'included'} ${customers.length} customers`);
+    res.json({ success: true, message: `${customers.length} customers updated` });
+  } catch (error) {
+    console.error('Customer exclusion error:', error);
+    res.status(500).json({ error: 'Failed to update customer exclusions: ' + error.message });
+  }
+});
+
 // Clear all data endpoint
 app.post('/clear-data', async (req, res) => {
   try {
@@ -159,9 +206,14 @@ app.post('/clear-data', async (req, res) => {
     const logResult = await pool.query('DELETE FROM upload_log');
     console.log('Upload log deleted:', logResult.rowCount);
     
+    // Clear customer exclusions
+    const exclusionsResult = await pool.query('DELETE FROM customer_exclusions');
+    console.log('Customer exclusions deleted:', exclusionsResult.rowCount);
+    
     // Reset sequences (optional)
     await pool.query('ALTER SEQUENCE records_id_seq RESTART WITH 1');
     await pool.query('ALTER SEQUENCE upload_log_id_seq RESTART WITH 1');
+    await pool.query('ALTER SEQUENCE customer_exclusions_id_seq RESTART WITH 1');
     
     console.log('Data cleared successfully');
     res.json({ message: 'All data cleared successfully' });
