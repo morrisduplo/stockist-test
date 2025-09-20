@@ -178,6 +178,32 @@
             width: 300px;
             margin-right: auto;
         }
+
+        .debug-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            font-family: monospace;
+            border: 1px solid #ffeaa7;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -185,6 +211,17 @@
         <div class="header">
             <h1>Customer Management</h1>
             <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+
+        <!-- Debug Information -->
+        <div id="debugInfo" class="debug-info" style="display: none;">
+            <strong>Debug Information:</strong><br>
+            <div id="debugContent"></div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="error-message" style="display: none;">
+            <strong>Error:</strong> <span id="errorText"></span>
         </div>
 
         <div class="stats">
@@ -217,6 +254,7 @@
                 </select>
             </div>
             <button id="refreshBtn">Refresh Data</button>
+            <button id="debugBtn" style="background: #17a2b8;">Toggle Debug</button>
         </div>
 
         <div id="customersContainer">
@@ -228,119 +266,200 @@
         // DOM elements
         const customersContainer = document.getElementById('customersContainer');
         const refreshBtn = document.getElementById('refreshBtn');
+        const debugBtn = document.getElementById('debugBtn');
         const searchBox = document.getElementById('searchBox');
         const countryFilter = document.getElementById('countryFilter');
         const totalCustomers = document.getElementById('totalCustomers');
         const totalCountries = document.getElementById('totalCountries');
         const totalOrders = document.getElementById('totalOrders');
         const totalRevenue = document.getElementById('totalRevenue');
+        const debugInfo = document.getElementById('debugInfo');
+        const debugContent = document.getElementById('debugContent');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
 
         let customersData = [];
         let filteredData = [];
+        let debugMode = false;
 
         // Event listeners
         refreshBtn.addEventListener('click', loadCustomers);
+        debugBtn.addEventListener('click', toggleDebug);
         searchBox.addEventListener('input', filterCustomers);
         countryFilter.addEventListener('change', filterCustomers);
+
+        function toggleDebug() {
+            debugMode = !debugMode;
+            debugInfo.style.display = debugMode ? 'block' : 'none';
+            debugBtn.textContent = debugMode ? 'Hide Debug' : 'Show Debug';
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+            console.error('Customer page error:', message);
+        }
+
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+
+        function updateDebug(message) {
+            if (debugMode) {
+                debugContent.innerHTML += message + '<br>';
+                console.log('Debug:', message);
+            }
+        }
 
         // Load customer data
         async function loadCustomers() {
             try {
+                hideError();
                 customersContainer.innerHTML = '<div class="loading">Loading customer data...</div>';
                 
-                const response = await fetch('/api/customers');
-                const data = await response.json();
+                updateDebug('Starting customer data load...');
+                updateDebug('Making request to: /api/customers');
                 
-                customersData = data.customers;
+                const response = await fetch('/api/customers');
+                updateDebug(`Response status: ${response.status} ${response.statusText}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                updateDebug(`Received data: ${JSON.stringify(data, null, 2)}`);
+                
+                customersData = data.customers || [];
                 filteredData = [...customersData];
                 
-                updateStats(data.stats);
+                updateDebug(`Customers loaded: ${customersData.length}`);
+                updateDebug(`Stats: ${JSON.stringify(data.stats)}`);
+                
+                if (data.stats) {
+                    updateStats(data.stats);
+                } else {
+                    updateDebug('No stats received');
+                }
+                
                 updateCountryFilter();
                 displayCustomers();
                 
             } catch (error) {
-                customersContainer.innerHTML = '<div class="loading">Error loading customer data: ' + error.message + '</div>';
+                console.error('Load customers error:', error);
+                showError(error.message);
+                customersContainer.innerHTML = `<div class="no-data">Error loading customer data: ${error.message}</div>`;
+                updateDebug(`Error: ${error.message}`);
             }
         }
 
         // Update statistics
         function updateStats(stats) {
-            totalCustomers.textContent = stats.totalCustomers.toLocaleString();
-            totalCountries.textContent = stats.totalCountries;
-            totalOrders.textContent = stats.totalOrders.toLocaleString();
-            totalRevenue.textContent = '£' + stats.totalRevenue.toLocaleString();
+            try {
+                totalCustomers.textContent = (stats.total_customers || 0).toLocaleString();
+                totalCountries.textContent = stats.total_countries || 0;
+                totalOrders.textContent = (stats.total_orders || 0).toLocaleString();
+                totalRevenue.textContent = '£' + (stats.total_revenue || 0).toLocaleString();
+                updateDebug('Stats updated successfully');
+            } catch (error) {
+                updateDebug(`Error updating stats: ${error.message}`);
+            }
         }
 
         // Update country filter dropdown
         function updateCountryFilter() {
-            const countries = [...new Set(customersData.map(c => c.country))].sort();
-            const currentValue = countryFilter.value;
-            
-            countryFilter.innerHTML = '<option value="">All Countries</option>';
-            countries.forEach(country => {
-                const option = document.createElement('option');
-                option.value = country;
-                option.textContent = country;
-                countryFilter.appendChild(option);
-            });
-            
-            countryFilter.value = currentValue;
+            try {
+                const countries = [...new Set(customersData.map(c => c.country))].sort();
+                const currentValue = countryFilter.value;
+                
+                countryFilter.innerHTML = '<option value="">All Countries</option>';
+                countries.forEach(country => {
+                    const option = document.createElement('option');
+                    option.value = country;
+                    option.textContent = country;
+                    countryFilter.appendChild(option);
+                });
+                
+                countryFilter.value = currentValue;
+                updateDebug(`Country filter updated with ${countries.length} countries: ${countries.join(', ')}`);
+            } catch (error) {
+                updateDebug(`Error updating country filter: ${error.message}`);
+            }
         }
 
         // Filter customers
         function filterCustomers() {
-            const searchTerm = searchBox.value.toLowerCase();
-            const selectedCountry = countryFilter.value;
-            
-            filteredData = customersData.filter(customer => {
-                const matchesSearch = customer.customer_name.toLowerCase().includes(searchTerm);
-                const matchesCountry = !selectedCountry || customer.country === selectedCountry;
-                return matchesSearch && matchesCountry;
-            });
-            
-            displayCustomers();
+            try {
+                const searchTerm = searchBox.value.toLowerCase();
+                const selectedCountry = countryFilter.value;
+                
+                filteredData = customersData.filter(customer => {
+                    const matchesSearch = customer.customer_name.toLowerCase().includes(searchTerm);
+                    const matchesCountry = !selectedCountry || customer.country === selectedCountry;
+                    return matchesSearch && matchesCountry;
+                });
+                
+                updateDebug(`Filtered ${customersData.length} customers to ${filteredData.length}`);
+                displayCustomers();
+            } catch (error) {
+                updateDebug(`Error filtering customers: ${error.message}`);
+            }
         }
 
         // Display customers table
         function displayCustomers() {
-            if (filteredData.length === 0) {
-                customersContainer.innerHTML = '<div class="loading">No customers found.</div>';
-                return;
-            }
+            try {
+                if (filteredData.length === 0) {
+                    if (customersData.length === 0) {
+                        customersContainer.innerHTML = '<div class="no-data">No customer data found. Upload some sales data first!</div>';
+                    } else {
+                        customersContainer.innerHTML = '<div class="no-data">No customers match your search criteria.</div>';
+                    }
+                    updateDebug('No customers to display');
+                    return;
+                }
 
-            const table = document.createElement('table');
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>Customer Name</th>
-                        <th>Country</th>
-                        <th>Total Orders</th>
-                        <th>Total Quantity</th>
-                        <th>Total Revenue</th>
-                        <th>Last Order</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${filteredData.map(customer => `
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
                         <tr>
-                            <td>${customer.customer_name}</td>
-                            <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country}</td>
-                            <td>${customer.total_orders}</td>
-                            <td>${customer.total_quantity}</td>
-                            <td>£${parseFloat(customer.total_revenue).toFixed(2)}</td>
-                            <td>${new Date(customer.last_order).toLocaleDateString()}</td>
+                            <th>Customer Name</th>
+                            <th>Country</th>
+                            <th>Total Orders</th>
+                            <th>Total Quantity</th>
+                            <th>Total Revenue</th>
+                            <th>Last Order</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            `;
+                    </thead>
+                    <tbody>
+                        ${filteredData.map(customer => `
+                            <tr>
+                                <td>${customer.customer_name || 'N/A'}</td>
+                                <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
+                                <td>${customer.total_orders || 0}</td>
+                                <td>${customer.total_quantity || 0}</td>
+                                <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
+                                <td>${customer.last_order ? new Date(customer.last_order).toLocaleDateString() : 'N/A'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
 
-            // Add click handlers for editable cells
-            table.querySelectorAll('.edit-cell').forEach(cell => {
-                cell.addEventListener('click', makeEditable);
-            });
+                // Add click handlers for editable cells
+                table.querySelectorAll('.edit-cell').forEach(cell => {
+                    cell.addEventListener('click', makeEditable);
+                });
 
-            customersContainer.innerHTML = '';
-            customersContainer.appendChild(table);
+                customersContainer.innerHTML = '';
+                customersContainer.appendChild(table);
+                
+                updateDebug(`Displayed ${filteredData.length} customers in table`);
+
+            } catch (error) {
+                console.error('Display customers error:', error);
+                updateDebug(`Error displaying customers: ${error.message}`);
+                customersContainer.innerHTML = `<div class="no-data">Error displaying customers: ${error.message}</div>`;
+            }
         }
 
         // Make cell editable
@@ -411,12 +530,14 @@
                     }
                     
                     updateCountryFilter();
+                    updateDebug(`Updated ${customerName} ${field} to ${newValue}`);
                 } else {
                     throw new Error('Failed to update customer');
                 }
             } catch (error) {
                 alert('Error updating customer: ' + error.message);
                 cancelEdit(cell, oldValue);
+                updateDebug(`Error updating customer: ${error.message}`);
             }
         }
 
@@ -427,6 +548,7 @@
         }
 
         // Load customers when page loads
+        updateDebug('Page loaded, starting initial data load...');
         loadCustomers();
     </script>
 </body>
