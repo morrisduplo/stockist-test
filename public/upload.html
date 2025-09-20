@@ -236,6 +236,63 @@
             font-size: 12px;
         }
 
+        /* Pagination Styles */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .pagination-info {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pagination-btn {
+            background: #000000;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #333333;
+        }
+
+        .pagination-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .page-input {
+            width: 60px;
+            text-align: center;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .page-indicator {
+            color: #666;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -433,6 +490,22 @@
                     </div>
                     <button id="filterBtn" class="refresh-btn">Apply Filters</button>
                 </div>
+
+                <!-- Pagination Controls -->
+                <div id="paginationContainer" class="pagination-container" style="display: none;">
+                    <div class="pagination-info">
+                        <span id="paginationInfo">Page 1 of 1 (0 records)</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="firstPageBtn" class="pagination-btn">First</button>
+                        <button id="prevPageBtn" class="pagination-btn">← Previous</button>
+                        <span class="page-indicator">Page</span>
+                        <input type="number" id="pageInput" class="page-input" min="1" value="1">
+                        <span class="page-indicator">of <span id="totalPagesSpan">1</span></span>
+                        <button id="nextPageBtn" class="pagination-btn">Next →</button>
+                        <button id="lastPageBtn" class="pagination-btn">Last</button>
+                    </div>
+                </div>
                 
                 <div id="recordsContainer">
                     <div class="loading">Loading records...</div>
@@ -504,9 +577,69 @@
         const editForm = document.getElementById('editForm');
         const cancelEdit = document.getElementById('cancelEdit');
 
+        // Pagination elements
+        const paginationContainer = document.getElementById('paginationContainer');
+        const paginationInfo = document.getElementById('paginationInfo');
+        const firstPageBtn = document.getElementById('firstPageBtn');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const lastPageBtn = document.getElementById('lastPageBtn');
+        const pageInput = document.getElementById('pageInput');
+        const totalPagesSpan = document.getElementById('totalPagesSpan');
+
         let allRecords = [];
         let filteredRecords = [];
         let currentEditingId = null;
+        let currentPage = 1;
+        let totalPages = 1;
+        let totalRecords = 0;
+
+        // Pagination event listeners
+        firstPageBtn.addEventListener('click', () => goToPage(1));
+        prevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
+        nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
+        lastPageBtn.addEventListener('click', () => goToPage(totalPages));
+        pageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const page = parseInt(pageInput.value);
+                if (page >= 1 && page <= totalPages) {
+                    goToPage(page);
+                }
+            }
+        });
+
+        // Go to specific page
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadRecords();
+        }
+
+        // Update pagination controls
+        function updatePaginationControls(pagination) {
+            if (!pagination) {
+                paginationContainer.style.display = 'none';
+                return;
+            }
+
+            currentPage = pagination.currentPage;
+            totalPages = pagination.totalPages;
+            totalRecords = pagination.totalRecords;
+
+            paginationContainer.style.display = 'flex';
+            
+            paginationInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalRecords.toLocaleString()} total records, showing ${pagination.recordsOnThisPage} on this page)`;
+            
+            totalPagesSpan.textContent = totalPages;
+            pageInput.value = currentPage;
+            pageInput.max = totalPages;
+            
+            // Update button states
+            firstPageBtn.disabled = !pagination.hasPreviousPage;
+            prevPageBtn.disabled = !pagination.hasPreviousPage;
+            nextPageBtn.disabled = !pagination.hasNextPage;
+            lastPageBtn.disabled = !pagination.hasNextPage;
+        }
 
         // Drag and drop functionality
         fileDropArea.addEventListener('click', () => fileInput.click());
@@ -592,6 +725,7 @@
                         <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
                     `;
                     loadUploadLog(); // Refresh the upload log
+                    currentPage = 1; // Reset to first page
                     loadRecords(); // Refresh the records table
                 } else {
                     showStatus(result.error || 'Upload failed', 'error');
@@ -605,7 +739,10 @@
         });
 
         // Event listeners
-        refreshBtn.addEventListener('click', loadRecords);
+        refreshBtn.addEventListener('click', () => {
+            currentPage = 1;
+            loadRecords();
+        });
         refreshLogBtn.addEventListener('click', loadUploadLog);
         filterBtn.addEventListener('click', applyFilters);
         searchInput.addEventListener('input', applyFilters);
@@ -628,6 +765,7 @@
                     
                     if (response.ok) {
                         showStatus(result.message, 'success');
+                        currentPage = 1;
                         loadRecords(); // Refresh the table
                         loadUploadLog(); // Refresh upload log
                     } else {
@@ -710,13 +848,23 @@
             }
         }
 
-        // Load and display records
+        // Load and display records with pagination
         async function loadRecords() {
             try {
                 recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
                 
-                const response = await fetch('/records');
-                allRecords = await response.json();
+                const response = await fetch(`/records?page=${currentPage}`);
+                const data = await response.json();
+
+                // Handle paginated response
+                if (data.records) {
+                    allRecords = data.records;
+                    updatePaginationControls(data.pagination);
+                } else {
+                    // Fallback for non-paginated response
+                    allRecords = data;
+                    updatePaginationControls(null);
+                }
 
                 // Update country filter
                 updateCountryFilter();
@@ -727,6 +875,7 @@
             } catch (error) {
                 recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
                 recordCount.textContent = '';
+                updatePaginationControls(null);
             }
         }
 
@@ -785,7 +934,7 @@
                 return;
             }
 
-            recordCount.textContent = `${filteredRecords.length} record${filteredRecords.length !== 1 ? 's' : ''} found (${allRecords.length} total)`;
+            recordCount.textContent = `${filteredRecords.length} record${filteredRecords.length !== 1 ? 's' : ''} found (${allRecords.length} total on this page)`;
 
             // Create table with corrected headers
             const table = document.createElement('table');
