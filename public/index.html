@@ -213,18 +213,32 @@
     <div class="container">
         <h1>Excel Database Application</h1>
         
-        <!-- Upload Section -->
+        <!-- Upload Section - Gazelle -->
         <div class="upload-section">
             <h2>Upload Gazelle Sales Data</h2>
-            <form id="uploadForm" class="upload-form">
-                <div class="file-drop-area" id="fileDropArea">
+            <form id="uploadFormGazelle" class="upload-form">
+                <div class="file-drop-area" id="fileDropAreaGazelle">
+                    <div>📁 Drop Excel file here or click to browse</div>
+                    <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
+                    <input type="file" id="fileInputGazelle" accept=".xlsx,.xls" required>
+                </div>
+                <button type="submit" id="uploadBtnGazelle">Upload & Process</button>
+            </form>
+            <div id="statusGazelle" class="status"></div>
+        </div>
+
+        <!-- Upload Section - Shopify -->
+        <div class="upload-section">
+            <h2>Upload Shopify Sales Data</h2>
+            <form id="uploadFormShopify" class="upload-form">
+                <div class="file-drop-area" id="fileDropAreaShopify">
                     <div>📁 Drop Excel file here or click to browse</div>
                     <div class="file-drop-text">Supports .xlsx and .xls files</div>
-                    <input type="file" id="fileInput" accept=".xlsx,.xls" required>
+                    <input type="file" id="fileInputShopify" accept=".xlsx,.xls,.csv" required>
                 </div>
-                <button type="submit" id="uploadBtn">Upload & Process</button>
+                <button type="submit" id="uploadBtnShopify">Upload & Process</button>
             </form>
-            <div id="status" class="status"></div>
+            <div id="statusShopify" class="status"></div>
         </div>
 
         <!-- Records Section -->
@@ -262,78 +276,100 @@
     </div>
 
     <script>
-        // DOM elements
-        const uploadForm = document.getElementById('uploadForm');
-        const fileInput = document.getElementById('fileInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const status = document.getElementById('status');
+        // DOM elements - Gazelle
+        const uploadFormGazelle = document.getElementById('uploadFormGazelle');
+        const fileInputGazelle = document.getElementById('fileInputGazelle');
+        const uploadBtnGazelle = document.getElementById('uploadBtnGazelle');
+        const statusGazelle = document.getElementById('statusGazelle');
+        const fileDropAreaGazelle = document.getElementById('fileDropAreaGazelle');
+
+        // DOM elements - Shopify
+        const uploadFormShopify = document.getElementById('uploadFormShopify');
+        const fileInputShopify = document.getElementById('fileInputShopify');
+        const uploadBtnShopify = document.getElementById('uploadBtnShopify');
+        const statusShopify = document.getElementById('statusShopify');
+        const fileDropAreaShopify = document.getElementById('fileDropAreaShopify');
+
+        // Other DOM elements
         const recordsContainer = document.getElementById('recordsContainer');
         const refreshBtn = document.getElementById('refreshBtn');
         const recordCount = document.getElementById('recordCount');
         const uploadLogContainer = document.getElementById('uploadLogContainer');
         const refreshLogBtn = document.getElementById('refreshLogBtn');
         const logCount = document.getElementById('logCount');
-        const fileDropArea = document.getElementById('fileDropArea');
 
-        // Drag and drop functionality
-        fileDropArea.addEventListener('click', () => fileInput.click());
+        // Drag and drop functionality - Gazelle
+        setupDragAndDrop(fileDropAreaGazelle, fileInputGazelle, statusGazelle, 'gazelle');
 
-        fileDropArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            fileDropArea.classList.add('dragover');
-        });
+        // Drag and drop functionality - Shopify  
+        setupDragAndDrop(fileDropAreaShopify, fileInputShopify, statusShopify, 'shopify');
 
-        fileDropArea.addEventListener('dragleave', () => {
-            fileDropArea.classList.remove('dragover');
-        });
+        // Function to set up drag and drop for any upload area
+        function setupDragAndDrop(dropArea, fileInput, statusElement, type) {
+            dropArea.addEventListener('click', () => fileInput.click());
 
-        fileDropArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            fileDropArea.classList.remove('dragover');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const file = files[0];
-                if (file.name.match(/\.(xlsx|xls)$/i)) {
-                    fileInput.files = files;
-                    updateDropAreaText(file.name);
-                } else {
-                    showStatus('Please select an Excel file (.xlsx or .xls)', 'error');
+            dropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropArea.classList.add('dragover');
+            });
+
+            dropArea.addEventListener('dragleave', () => {
+                dropArea.classList.remove('dragover');
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const file = files[0];
+                    if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
+                        fileInput.files = files;
+                        updateDropAreaText(dropArea, file.name);
+                    } else {
+                        showStatus(`Please select an Excel or CSV file (.xlsx, .xls, .csv)`, 'error', statusElement);
+                    }
                 }
-            }
-        });
+            });
 
-        // Update file input change handler
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                updateDropAreaText(e.target.files[0].name);
-            }
-        });
+            // Update file input change handler
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    updateDropAreaText(dropArea, e.target.files[0].name);
+                }
+            });
+        }
 
         // Function to update drop area text
-        function updateDropAreaText(filename) {
-            fileDropArea.innerHTML = `
+        function updateDropAreaText(dropArea, filename) {
+            dropArea.innerHTML = `
                 <div>📄 ${filename}</div>
                 <div class="file-drop-text">Click to change file</div>
             `;
         }
 
-        // Upload form handler
-        uploadForm.addEventListener('submit', async (e) => {
+        // Upload form handlers
+        uploadFormGazelle.addEventListener('submit', (e) => handleUpload(e, fileInputGazelle, uploadBtnGazelle, statusGazelle, 'gazelle'));
+        uploadFormShopify.addEventListener('submit', (e) => handleUpload(e, fileInputShopify, uploadBtnShopify, statusShopify, 'shopify'));
+
+        // Generic upload handler
+        async function handleUpload(e, fileInput, uploadBtn, statusElement, dataType) {
             e.preventDefault();
             
             const file = fileInput.files[0];
             if (!file) {
-                showStatus('Please select a file', 'error');
+                showStatus('Please select a file', 'error', statusElement);
                 return;
             }
 
             const formData = new FormData();
             formData.append('excelFile', file);
+            formData.append('dataType', dataType); // Tell server which format to expect
 
             uploadBtn.disabled = true;
             uploadBtn.textContent = 'Processing...';
-            showStatus('Uploading and processing file...', 'success');
+            showStatus('Uploading and processing file...', 'success', statusElement);
 
             try {
                 const response = await fetch('/upload', {
@@ -344,35 +380,35 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showStatus(result.message, 'success');
+                    showStatus(result.message, 'success', statusElement);
                     fileInput.value = ''; // Clear file input
                     loadUploadLog(); // Refresh the upload log
                     loadRecords(); // Refresh the records table
                 } else {
-                    showStatus(result.error || 'Upload failed', 'error');
+                    showStatus(result.error || 'Upload failed', 'error', statusElement);
                 }
             } catch (error) {
-                showStatus('Network error: ' + error.message, 'error');
+                showStatus('Network error: ' + error.message, 'error', statusElement);
             } finally {
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = 'Upload & Process';
             }
-        });
+        }
 
         // Refresh button handlers
         refreshBtn.addEventListener('click', loadRecords);
         refreshLogBtn.addEventListener('click', loadUploadLog);
 
         // Show status message
-        function showStatus(message, type) {
-            status.textContent = message;
-            status.className = `status ${type}`;
-            status.style.display = 'block';
+        function showStatus(message, type, statusElement) {
+            statusElement.textContent = message;
+            statusElement.className = `status ${type}`;
+            statusElement.style.display = 'block';
             
             // Hide status after 5 seconds for success messages
             if (type === 'success') {
                 setTimeout(() => {
-                    status.style.display = 'none';
+                    statusElement.style.display = 'none';
                 }, 5000);
             }
         }
