@@ -276,21 +276,12 @@
     </div>
 
     <script>
-        // DOM elements - Gazelle
-        const uploadFormGazelle = document.getElementById('uploadFormGazelle');
-        const fileInputGazelle = document.getElementById('fileInputGazelle');
-        const uploadBtnGazelle = document.getElementById('uploadBtnGazelle');
-        const statusGazelle = document.getElementById('statusGazelle');
-        const fileDropAreaGazelle = document.getElementById('fileDropAreaGazelle');
-
-        // DOM elements - Shopify
-        const uploadFormShopify = document.getElementById('uploadFormShopify');
-        const fileInputShopify = document.getElementById('fileInputShopify');
-        const uploadBtnShopify = document.getElementById('uploadBtnShopify');
-        const statusShopify = document.getElementById('statusShopify');
-        const fileDropAreaShopify = document.getElementById('fileDropAreaShopify');
-
-        // Other DOM elements
+        // DOM elements
+        const uploadForm = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const fileDropArea = document.getElementById('fileDropArea');
         const recordsContainer = document.getElementById('recordsContainer');
         const refreshBtn = document.getElementById('refreshBtn');
         const recordCount = document.getElementById('recordCount');
@@ -298,78 +289,72 @@
         const refreshLogBtn = document.getElementById('refreshLogBtn');
         const logCount = document.getElementById('logCount');
 
-        // Drag and drop functionality - Gazelle
-        setupDragAndDrop(fileDropAreaGazelle, fileInputGazelle, statusGazelle, 'gazelle');
+        // Drag and drop functionality
+        fileDropArea.addEventListener('click', () => fileInput.click());
 
-        // Drag and drop functionality - Shopify  
-        setupDragAndDrop(fileDropAreaShopify, fileInputShopify, statusShopify, 'shopify');
+        fileDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileDropArea.classList.add('dragover');
+        });
 
-        // Function to set up drag and drop for any upload area
-        function setupDragAndDrop(dropArea, fileInput, statusElement, type) {
-            dropArea.addEventListener('click', () => fileInput.click());
+        fileDropArea.addEventListener('dragleave', () => {
+            fileDropArea.classList.remove('dragover');
+        });
 
-            dropArea.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropArea.classList.add('dragover');
-            });
-
-            dropArea.addEventListener('dragleave', () => {
-                dropArea.classList.remove('dragover');
-            });
-
-            dropArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropArea.classList.remove('dragover');
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    const file = files[0];
-                    if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
-                        fileInput.files = files;
-                        updateDropAreaText(dropArea, file.name);
-                    } else {
-                        showStatus(`Please select an Excel or CSV file (.xlsx, .xls, .csv)`, 'error', statusElement);
-                    }
+        fileDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileDropArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
+                    fileInput.files = files;
+                    updateDropAreaText(file.name);
+                } else {
+                    showStatus('Please select an Excel or CSV file (.xlsx, .xls, .csv)', 'error');
                 }
-            });
+            }
+        });
 
-            // Update file input change handler
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    updateDropAreaText(dropArea, e.target.files[0].name);
-                }
-            });
-        }
+        // Update file input change handler
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                updateDropAreaText(e.target.files[0].name);
+            }
+        });
 
         // Function to update drop area text
-        function updateDropAreaText(dropArea, filename) {
-            dropArea.innerHTML = `
+        function updateDropAreaText(filename) {
+            fileDropArea.innerHTML = `
                 <div>📄 ${filename}</div>
                 <div class="file-drop-text">Click to change file</div>
             `;
         }
 
-        // Upload form handlers
-        uploadFormGazelle.addEventListener('submit', (e) => handleUpload(e, fileInputGazelle, uploadBtnGazelle, statusGazelle, 'gazelle'));
-        uploadFormShopify.addEventListener('submit', (e) => handleUpload(e, fileInputShopify, uploadBtnShopify, statusShopify, 'shopify'));
-
-        // Generic upload handler
-        async function handleUpload(e, fileInput, uploadBtn, statusElement, dataType) {
+        // Upload form handler
+        uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const file = fileInput.files[0];
             if (!file) {
-                showStatus('Please select a file', 'error', statusElement);
+                showStatus('Please select a file', 'error');
                 return;
             }
 
             const formData = new FormData();
             formData.append('excelFile', file);
-            formData.append('dataType', dataType); // Tell server which format to expect
+            
+            // Auto-detect data type based on file name or content
+            let dataType = 'gazelle'; // default
+            if (file.name.toLowerCase().includes('shopify') || file.name.toLowerCase().endsWith('.csv')) {
+                dataType = 'shopify';
+            }
+            formData.append('dataType', dataType);
 
             uploadBtn.disabled = true;
             uploadBtn.textContent = 'Processing...';
-            showStatus('Uploading and processing file...', 'success', statusElement);
+            showStatus('Uploading and processing file...', 'success');
 
             try {
                 const response = await fetch('/upload', {
@@ -380,35 +365,35 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showStatus(result.message, 'success', statusElement);
+                    showStatus(result.message, 'success');
                     fileInput.value = ''; // Clear file input
                     loadUploadLog(); // Refresh the upload log
                     loadRecords(); // Refresh the records table
                 } else {
-                    showStatus(result.error || 'Upload failed', 'error', statusElement);
+                    showStatus(result.error || 'Upload failed', 'error');
                 }
             } catch (error) {
-                showStatus('Network error: ' + error.message, 'error', statusElement);
+                showStatus('Network error: ' + error.message, 'error');
             } finally {
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = 'Upload & Process';
             }
-        }
+        });
 
         // Refresh button handlers
         refreshBtn.addEventListener('click', loadRecords);
         refreshLogBtn.addEventListener('click', loadUploadLog);
 
         // Show status message
-        function showStatus(message, type, statusElement) {
-            statusElement.textContent = message;
-            statusElement.className = `status ${type}`;
-            statusElement.style.display = 'block';
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
             
             // Hide status after 5 seconds for success messages
             if (type === 'success') {
                 setTimeout(() => {
-                    statusElement.style.display = 'none';
+                    status.style.display = 'none';
                 }, 5000);
             }
         }
