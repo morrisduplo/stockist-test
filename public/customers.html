@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Management - Sales Database</title>
+    <!-- Import Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier', monospace;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'EB Garamond', serif;
+            font-weight: 400;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #f1f3f4;
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            color: #333333;
+        }
+
+        .back-link {
+            color: #666;
+            text-decoration: none;
+            padding: 8px 16px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            background: #f1f3f4;
+        }
+
+        .filters {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        select, input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier', monospace;
+            font-size: 12px;
+        }
+
+        button {
+            background: #000000;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background: #333333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+
+        th, td {
+            padding: 4px 8px;
+            text-align: left;
+            border: none;
+            line-height: 1.2;
+        }
+
+        th {
+            background-color: #34495e;
+            color: white;
+            font-weight: normal;
+            font-family: 'Courier', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .edit-cell {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+
+        .edit-cell:hover {
+            background: #e9ecef;
+        }
+
+        .editing {
+            background: #fff3cd !important;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .search-box {
+            width: 300px;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Customer Management</h1>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalCustomers">-</div>
+                <div class="stat-label">Total Customers</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalCountries">-</div>
+                <div class="stat-label">Countries</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalOrders">-</div>
+                <div class="stat-label">Total Orders</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalRevenue">-</div>
+                <div class="stat-label">Total Revenue</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <input type="text" id="searchBox" class="search-box" placeholder="Search customers...">
+            </div>
+            <div class="filter-group">
+                <label>Country:</label>
+                <select id="countryFilter">
+                    <option value="">All Countries</option>
+                </select>
+            </div>
+            <button id="refreshBtn">Refresh Data</button>
+        </div>
+
+        <div id="customersContainer">
+            <div class="loading">Loading customer data...</div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const customersContainer = document.getElementById('customersContainer');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const searchBox = document.getElementById('searchBox');
+        const countryFilter = document.getElementById('countryFilter');
+        const totalCustomers = document.getElementById('totalCustomers');
+        const totalCountries = document.getElementById('totalCountries');
+        const totalOrders = document.getElementById('totalOrders');
+        const totalRevenue = document.getElementById('totalRevenue');
+
+        let customersData = [];
+        let filteredData = [];
+
+        // Event listeners
+        refreshBtn.addEventListener('click', loadCustomers);
+        searchBox.addEventListener('input', filterCustomers);
+        countryFilter.addEventListener('change', filterCustomers);
+
+        // Load customer data
+        async function loadCustomers() {
+            try {
+                customersContainer.innerHTML = '<div class="loading">Loading customer data...</div>';
+                
+                const response = await fetch('/api/customers');
+                const data = await response.json();
+                
+                customersData = data.customers;
+                filteredData = [...customersData];
+                
+                updateStats(data.stats);
+                updateCountryFilter();
+                displayCustomers();
+                
+            } catch (error) {
+                customersContainer.innerHTML = '<div class="loading">Error loading customer data: ' + error.message + '</div>';
+            }
+        }
+
+        // Update statistics
+        function updateStats(stats) {
+            totalCustomers.textContent = stats.totalCustomers.toLocaleString();
+            totalCountries.textContent = stats.totalCountries;
+            totalOrders.textContent = stats.totalOrders.toLocaleString();
+            totalRevenue.textContent = '£' + stats.totalRevenue.toLocaleString();
+        }
+
+        // Update country filter dropdown
+        function updateCountryFilter() {
+            const countries = [...new Set(customersData.map(c => c.country))].sort();
+            const currentValue = countryFilter.value;
+            
+            countryFilter.innerHTML = '<option value="">All Countries</option>';
+            countries.forEach(country => {
+                const option = document.createElement('option');
+                option.value = country;
+                option.textContent = country;
+                countryFilter.appendChild(option);
+            });
+            
+            countryFilter.value = currentValue;
+        }
+
+        // Filter customers
+        function filterCustomers() {
+            const searchTerm = searchBox.value.toLowerCase();
+            const selectedCountry = countryFilter.value;
+            
+            filteredData = customersData.filter(customer => {
+                const matchesSearch = customer.customer_name.toLowerCase().includes(searchTerm);
+                const matchesCountry = !selectedCountry || customer.country === selectedCountry;
+                return matchesSearch && matchesCountry;
+            });
+            
+            displayCustomers();
+        }
+
+        // Display customers table
+        function displayCustomers() {
+            if (filteredData.length === 0) {
+                customersContainer.innerHTML = '<div class="loading">No customers found.</div>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Customer Name</th>
+                        <th>Country</th>
+                        <th>Total Orders</th>
+                        <th>Total Quantity</th>
+                        <th>Total Revenue</th>
+                        <th>Last Order</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredData.map(customer => `
+                        <tr>
+                            <td>${customer.customer_name}</td>
+                            <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country}</td>
+                            <td>${customer.total_orders}</td>
+                            <td>${customer.total_quantity}</td>
+                            <td>£${parseFloat(customer.total_revenue).toFixed(2)}</td>
+                            <td>${new Date(customer.last_order).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+
+            // Add click handlers for editable cells
+            table.querySelectorAll('.edit-cell').forEach(cell => {
+                cell.addEventListener('click', makeEditable);
+            });
+
+            customersContainer.innerHTML = '';
+            customersContainer.appendChild(table);
+        }
+
+        // Make cell editable
+        function makeEditable(e) {
+            const cell = e.target;
+            const currentValue = cell.textContent;
+            const customerName = cell.dataset.customer;
+            const field = cell.dataset.field;
+            
+            cell.classList.add('editing');
+            
+            if (field === 'country') {
+                // Create dropdown for country
+                const select = document.createElement('select');
+                const countries = ['UK', 'US', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Other'];
+                
+                countries.forEach(country => {
+                    const option = document.createElement('option');
+                    option.value = country;
+                    option.textContent = country;
+                    if (country === currentValue) option.selected = true;
+                    select.appendChild(option);
+                });
+                
+                cell.innerHTML = '';
+                cell.appendChild(select);
+                select.focus();
+                
+                select.addEventListener('blur', () => saveEdit(cell, customerName, field, select.value, currentValue));
+                select.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        saveEdit(cell, customerName, field, select.value, currentValue);
+                    } else if (e.key === 'Escape') {
+                        cancelEdit(cell, currentValue);
+                    }
+                });
+            }
+        }
+
+        // Save edit
+        async function saveEdit(cell, customerName, field, newValue, oldValue) {
+            if (newValue === oldValue) {
+                cancelEdit(cell, oldValue);
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/customers/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        customerName: customerName,
+                        field: field,
+                        value: newValue
+                    })
+                });
+                
+                if (response.ok) {
+                    cell.textContent = newValue;
+                    cell.classList.remove('editing');
+                    
+                    // Update local data
+                    const customer = customersData.find(c => c.customer_name === customerName);
+                    if (customer) {
+                        customer[field] = newValue;
+                    }
+                    
+                    updateCountryFilter();
+                } else {
+                    throw new Error('Failed to update customer');
+                }
+            } catch (error) {
+                alert('Error updating customer: ' + error.message);
+                cancelEdit(cell, oldValue);
+            }
+        }
+
+        // Cancel edit
+        function cancelEdit(cell, originalValue) {
+            cell.textContent = originalValue;
+            cell.classList.remove('editing');
+        }
+
+        // Load customers when page loads
+        loadCustomers();
+    </script>
+</body>
+</html>
