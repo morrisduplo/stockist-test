@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Database Application</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+
+        .upload-section {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="file"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 5px;
+            background: white;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d5f4e6;
+            color: #2d8659;
+            border: 1px solid #2d8659;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #721c24;
+        }
+
+        .records-section {
+            margin-top: 30px;
+        }
+
+        .records-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn {
+            background: #27ae60;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+
+        .refresh-btn:hover {
+            background: #219a52;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #34495e;
+            color: white;
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .no-records {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .record-count {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Excel Database Application</h1>
+        
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <h2>Upload Excel File</h2>
+            <form id="uploadForm" class="upload-form">
+                <input type="file" id="fileInput" accept=".xlsx,.xls" required>
+                <button type="submit" id="uploadBtn">Upload & Process</button>
+            </form>
+            <div id="status" class="status"></div>
+        </div>
+
+        <!-- Records Section -->
+        <div class="records-section">
+            <div class="records-header">
+                <h2>Stored Records</h2>
+                <div>
+                    <span id="recordCount" class="record-count"></span>
+                    <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
+                </div>
+            </div>
+            
+            <div id="recordsContainer">
+                <div class="loading">Loading records...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const uploadForm = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const recordsContainer = document.getElementById('recordsContainer');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const recordCount = document.getElementById('recordCount');
+
+        // Upload form handler
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Please select a file', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('excelFile', file);
+
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Processing...';
+            showStatus('Uploading and processing file...', 'success');
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(result.message, 'success');
+                    fileInput.value = ''; // Clear file input
+                    loadRecords(); // Refresh the records table
+                } else {
+                    showStatus(result.error || 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload & Process';
+            }
+        });
+
+        // Refresh button handler
+        refreshBtn.addEventListener('click', loadRecords);
+
+        // Show status message
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            // Hide status after 5 seconds for success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Load and display records
+        async function loadRecords() {
+            try {
+                recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
+                
+                const response = await fetch('/records');
+                const records = await response.json();
+
+                if (records.length === 0) {
+                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload an Excel file to get started!</div>';
+                    recordCount.textContent = '';
+                    return;
+                }
+
+                recordCount.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} found`;
+
+                // Create table
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Category</th>
+                            <th>Notes</th>
+                            <th>Upload Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${records.map(record => `
+                            <tr>
+                                <td>${record.id}</td>
+                                <td>${record.name || '-'}</td>
+                                <td>${record.date_value ? new Date(record.date_value).toLocaleDateString() : '-'}</td>
+                                <td>${record.amount ? '$' + parseFloat(record.amount).toFixed(2) : '-'}</td>
+                                <td>${record.category || '-'}</td>
+                                <td>${record.notes || '-'}</td>
+                                <td>${new Date(record.upload_date).toLocaleString()}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+
+                recordsContainer.innerHTML = '';
+                recordsContainer.appendChild(table);
+
+            } catch (error) {
+                recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
+                recordCount.textContent = '';
+            }
+        }
+
+        // Load records when page loads
+        loadRecords();
+    </script>
+</body>
+</html>
