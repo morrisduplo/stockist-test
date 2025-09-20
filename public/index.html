@@ -213,32 +213,18 @@
     <div class="container">
         <h1>Excel Database Application</h1>
         
-        <!-- Upload Section - Gazelle -->
+        <!-- Upload Section -->
         <div class="upload-section">
-            <h2>Upload Gazelle Sales Data</h2>
-            <form id="uploadFormGazelle" class="upload-form">
-                <div class="file-drop-area" id="fileDropAreaGazelle">
-                    <div>📁 Drop Excel file here or click to browse</div>
+            <h2>Upload Sales Data</h2>
+            <form id="uploadForm" class="upload-form">
+                <div class="file-drop-area" id="fileDropArea">
+                    <div>📁 Drop Excel or CSV file here or click to browse</div>
                     <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
-                    <input type="file" id="fileInputGazelle" accept=".xlsx,.xls" required>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" required>
                 </div>
-                <button type="submit" id="uploadBtnGazelle">Upload & Process</button>
+                <button type="submit" id="uploadBtn">Upload & Process</button>
             </form>
-            <div id="statusGazelle" class="status"></div>
-        </div>
-
-        <!-- Upload Section - Shopify -->
-        <div class="upload-section">
-            <h2>Upload Shopify Sales Data</h2>
-            <form id="uploadFormShopify" class="upload-form">
-                <div class="file-drop-area" id="fileDropAreaShopify">
-                    <div>📁 Drop Excel file here or click to browse</div>
-                    <div class="file-drop-text">Supports .xlsx and .xls files</div>
-                    <input type="file" id="fileInputShopify" accept=".xlsx,.xls,.csv" required>
-                </div>
-                <button type="submit" id="uploadBtnShopify">Upload & Process</button>
-            </form>
-            <div id="statusShopify" class="status"></div>
+            <div id="status" class="status"></div>
         </div>
 
         <!-- Records Section -->
