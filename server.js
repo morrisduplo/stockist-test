@@ -51,6 +51,16 @@ async function initDatabase() {
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS upload_log (
+        id SERIAL PRIMARY KEY,
+        filename VARCHAR(255),
+        records_count INTEGER,
+        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -107,6 +117,12 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       insertedRecords.push(result.rows[0]);
     }
 
+    // Log the file upload
+    await pool.query(
+      'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
+      [req.file.originalname, insertedRecords.length]
+    );
+
     res.json({ 
       message: `Successfully processed ${insertedRecords.length} records`, 
       records: insertedRecords 
@@ -126,6 +142,17 @@ app.get('/records', async (req, res) => {
   } catch (error) {
     console.error('Fetch records error:', error);
     res.status(500).json({ error: 'Failed to fetch records' });
+  }
+});
+
+// Get upload log
+app.get('/upload-log', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM upload_log ORDER BY upload_date DESC');
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Fetch upload log error:', error);
+    res.status(500).json({ error: 'Failed to fetch upload log' });
   }
 });
 
