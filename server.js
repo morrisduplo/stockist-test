@@ -8,22 +8,7 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Utility function to parse dates
-function parseDate(dateValue) {
-  if (!dateValue) return new Date();
-  if (dateValue instanceof Date) return dateValue;
-  
-  // Try to parse various date formats
-  const parsed = new Date(dateValue);
-  return isNaN(parsed.getTime()) ? new Date() : parsed;
-}
-
-// Start server
-initDatabase().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}); Database connection
+// Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
@@ -105,6 +90,284 @@ async function initDatabase() {
   } catch (error) {
     console.error('Database initialization error:', error);
   }
+}
+
+// Utility function to parse dates
+function parseDate(dateValue) {
+  if (!dateValue) return new Date();
+  if (dateValue instanceof Date) return dateValue;
+  
+  // Try to parse various date formats
+  const parsed = new Date(dateValue);
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+// Utility function to parse CSV lines (handles quoted values)
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  
+  result.push(current.trim());
+  return result;
+}
+
+// Function to clean customer names with special character handling
+function cleanCustomerName(rawName) {
+  if (!rawName || typeof rawName !== 'string') {
+    return null;
+  }
+  
+  console.log(`Cleaning customer name: "${rawName}"`);
+  
+  // Remove leading/trailing whitespace
+  let cleaned = rawName.trim();
+  
+  // Handle special characters and encoding issues
+  cleaned = cleaned
+    // Remove or replace HTML entities
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#\d+;/g, '') // Remove numeric HTML entities
+    
+    // Normalize quotes and apostrophes
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    
+    // Remove control characters and weird whitespace
+    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+    .replace(/[\u2000-\u200B\u2028\u2029\u202F\u205F\u3000]/g, ' ')
+    
+    // Replace multiple spaces with single space
+    .replace(/\s+/g, ' ')
+    
+    // Final trim
+    .trim();
+  
+  // If name contains a comma, take only the part before the first comma
+  if (cleaned.includes(',')) {
+    const beforeComma = cleaned.split(',')[0].trim();
+    console.log(`Split on comma: "${cleaned}" -> "${beforeComma}"`);
+    cleaned = beforeComma;
+  }
+  
+  // Additional cleanup - remove common problematic patterns
+  cleaned = cleaned
+    // Remove common address indicators
+    .replace(/^(c\/o|care of|attn:|attention:)\s+/i, '')
+    // Remove leading numbers that might be addresses
+    .replace(/^\d+[a-zA-Z]?\s+/, '')
+    // Remove trailing address-like patterns
+    .replace(/\s+(ltd|limited|inc|corp|gmbh|srl|bv)\.?$/i, (match) => match) // Keep these
+    .replace(/\s+\d+\s*$/, '') // Remove trailing numbers
+    .trim();
+  
+  // Log what we're doing
+  if (cleaned !== rawName.trim()) {
+    console.log(`Cleaned name: "${rawName}" -> "${cleaned}"`);
+  }
+  
+  // Validation checks
+  
+  // Return null if the cleaned name is empty or too short
+  if (cleaned.length < 2) {
+    console.log(`Rejected - too short: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it looks like an address (starts with numbers)
+  if (/^\d+\s/.test(cleaned)) {
+    console.log(`Rejected - looks like address: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it's only special characters or numbers
+  if (!/[a-zA-Z]/.test(cleaned)) {
+    console.log(`Rejected - no letters: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  // Return null if it's too generic
+  const genericNames = ['customer', 'guest', 'user', 'test', 'admin', 'default'];
+  if (genericNames.includes(cleaned.toLowerCase())) {
+    console.log(`Rejected - generic name: "${rawName}" -> "${cleaned}"`);
+    return null;
+  }
+  
+  console.log(`Accepted customer name: "${cleaned}"`);
+  return cleaned;
+}
+
+// Process Shopify data (CSV format) with city support
+function processShopifyData(rawData) {
+  console.log('=== DEBUGGING CSV PROCESSING ===');
+  console.log('Raw data length:', rawData.length);
+  
+  // Print all available columns
+  const columns = Object.keys(rawData[0] || {});
+  console.log('Available columns:', columns);
+  
+  // Step 1: Group data by order number
+  const orderGroups = new Map();
+  
+  rawData.forEach((row, index) => {
+    const orderNumber = row['Name'];
+    if (!orderNumber) {
+      console.log(`Row ${index + 1}: No order number, skipping`);
+      return;
+    }
+    
+    // Initialize order group if it doesn't exist
+    if (!orderGroups.has(orderNumber)) {
+      orderGroups.set(orderNumber, {
+        customerInfo: {
+          name: null,
+          company: null,
+          country: null,
+          city: null
+        },
+        lineItems: []
+      });
+    }
+    
+    const order = orderGroups.get(orderNumber);
+    
+    // Try to extract customer information - prioritize company names for B2B
+    if (!order.customerInfo.name && !order.customerInfo.company) {
+      // Check for company fields first (better for B2B)
+      if (row['Billing Company'] && row['Billing Company'].trim()) {
+        const cleanCompany = cleanCustomerName(row['Billing Company'].trim());
+        if (cleanCompany) {
+          order.customerInfo.company = cleanCompany;
+          order.customerInfo.name = cleanCompany;
+        }
+      } else if (row['Shipping Company'] && row['Shipping Company'].trim()) {
+        const cleanCompany = cleanCustomerName(row['Shipping Company'].trim());
+        if (cleanCompany) {
+          order.customerInfo.company = cleanCompany;
+          order.customerInfo.name = cleanCompany;
+        }
+      } else if (row['Billing Name'] && row['Billing Name'].trim()) {
+        const cleanName = cleanCustomerName(row['Billing Name'].trim());
+        if (cleanName) {
+          order.customerInfo.name = cleanName;
+        }
+      } else if (row['Shipping Name'] && row['Shipping Name'].trim()) {
+        const cleanName = cleanCustomerName(row['Shipping Name'].trim());
+        if (cleanName) {
+          order.customerInfo.name = cleanName;
+        }
+      }
+    }
+    
+    // Extract country and city information
+    if (!order.customerInfo.country) {
+      if (row['Billing Country'] && row['Billing Country'].trim()) {
+        order.customerInfo.country = row['Billing Country'].trim();
+      } else if (row['Shipping Country'] && row['Shipping Country'].trim()) {
+        order.customerInfo.country = row['Shipping Country'].trim();
+      }
+    }
+    
+    // Extract city information
+    if (!order.customerInfo.city) {
+      if (row['Billing City'] && row['Billing City'].trim()) {
+        order.customerInfo.city = row['Billing City'].trim();
+      } else if (row['Shipping City'] && row['Shipping City'].trim()) {
+        order.customerInfo.city = row['Shipping City'].trim();
+      }
+    }
+    
+    // Add line item if it has product information
+    if (row['Lineitem name'] && row['Lineitem quantity']) {
+      order.lineItems.push(row);
+    }
+  });
+  
+  // Step 2: Create records for each line item
+  const processedRecords = [];
+  
+  orderGroups.forEach((order, orderNumber) => {
+    const customerName = order.customerInfo.name || order.customerInfo.company || 'Unknown Customer';
+    const country = order.customerInfo.country || 'Unknown';
+    const city = order.customerInfo.city || 'Unknown';
+    
+    order.lineItems.forEach((item) => {
+      const quantity = parseInt(item['Lineitem quantity']) || 0;
+      const itemPrice = parseFloat(item['Lineitem price']) || 0;
+      const totalPrice = itemPrice * quantity;
+      
+      const record = {
+        order_date: parseDate(item['Created at']),
+        cus_no: null,
+        customer_name: customerName,
+        title: item['Lineitem name'] || 'Unknown Product',
+        book_ean: item['Lineitem sku'] || null,
+        quantity: quantity,
+        total: totalPrice,
+        country: country,
+        city: city
+      };
+      
+      processedRecords.push(record);
+    });
+  });
+  
+  console.log(`Created ${processedRecords.length} processed records`);
+  return processedRecords;
+}
+
+// Process Gazelle data (Excel format) with London default city
+function processGazelleData(rawData) {
+  console.log('=== PROCESSING GAZELLE DATA ===');
+  console.log('Raw data length:', rawData.length);
+  
+  const processedRecords = [];
+  
+  rawData.forEach((row, index) => {
+    try {
+      // Skip empty rows
+      if (!row || Object.keys(row).length === 0) return;
+      
+      // Gazelle format processing (existing logic)
+      const keys = Object.keys(row);
+      
+      const record = {
+        order_date: parseDate(row[keys[0]] || new Date()),
+        cus_no: row[keys[2]] || null,
+        customer_name: row[keys[3]] || 'Unknown',
+        title: row[keys[5]] || 'Unknown',
+        book_ean: row[keys[7]] || null,
+        quantity: parseInt(row[keys[8]]) || 0,
+        total: parseFloat(row[keys[9]]) || 0,
+        country: 'UK', // Default for Gazelle data
+        city: 'London' // Default for Excel files (no city data available)
+      };
+      
+      processedRecords.push(record);
+    } catch (error) {
+      console.error(`Error processing Gazelle row ${index + 1}:`, error);
+    }
+  });
+  
+  console.log(`Created ${processedRecords.length} Gazelle records`);
+  return processedRecords;
 }
 
 // Routes
@@ -386,350 +649,6 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-// ENHANCED: Shopify data processing function with city support
-function processShopifyData(rawData) {
-  console.log('=== DEBUGGING CSV PROCESSING ===');
-  console.log('Raw data length:', rawData.length);
-  
-  // Print all available columns
-  const columns = Object.keys(rawData[0] || {});
-  console.log('Available columns:', columns);
-  
-  // Look for customer-related columns
-  const customerColumns = columns.filter(col => 
-    col.toLowerCase().includes('name') || 
-    col.toLowerCase().includes('company') || 
-    col.toLowerCase().includes('billing') ||
-    col.toLowerCase().includes('shipping') ||
-    col.toLowerCase().includes('city')
-  );
-  console.log('Customer-related columns:', customerColumns);
-  
-  // Show sample data for first few rows
-  console.log('=== SAMPLE ROWS ===');
-  rawData.slice(0, 3).forEach((row, i) => {
-    console.log(`Row ${i + 1}:`);
-    console.log('  Order Number (Name):', row['Name']);
-    console.log('  Billing Name:', row['Billing Name']);
-    console.log('  Shipping Name:', row['Shipping Name']);
-    console.log('  Billing Company:', row['Billing Company']);
-    console.log('  Shipping Company:', row['Shipping Company']);
-    console.log('  Billing City:', row['Billing City']);
-    console.log('  Shipping City:', row['Shipping City']);
-    console.log('  Billing Country:', row['Billing Country']);
-    console.log('  Shipping Country:', row['Shipping Country']);
-    console.log('  Lineitem name:', row['Lineitem name']);
-    console.log('  Lineitem quantity:', row['Lineitem quantity']);
-    console.log('---');
-  });
-  
-  // Step 1: Group data by order number
-  const orderGroups = new Map();
-  
-  rawData.forEach((row, index) => {
-    const orderNumber = row['Name'];
-    if (!orderNumber) {
-      console.log(`Row ${index + 1}: No order number, skipping`);
-      return;
-    }
-    
-    // Initialize order group if it doesn't exist
-    if (!orderGroups.has(orderNumber)) {
-      orderGroups.set(orderNumber, {
-        customerInfo: {
-          name: null,
-          company: null,
-          country: null,
-          city: null
-        },
-        lineItems: []
-      });
-    }
-    
-    const order = orderGroups.get(orderNumber);
-    
-    // Try to extract customer information - prioritize company names for B2B
-    if (!order.customerInfo.name && !order.customerInfo.company) {
-      // Check for company fields first (better for B2B)
-      if (row['Billing Company'] && row['Billing Company'].trim()) {
-        const cleanCompany = cleanCustomerName(row['Billing Company'].trim());
-        if (cleanCompany) {
-          order.customerInfo.company = cleanCompany;
-          order.customerInfo.name = cleanCompany;
-          console.log(`Found company "${cleanCompany}" for order ${orderNumber} (original: "${row['Billing Company']}")`);
-        }
-      } else if (row['Shipping Company'] && row['Shipping Company'].trim()) {
-        const cleanCompany = cleanCustomerName(row['Shipping Company'].trim());
-        if (cleanCompany) {
-          order.customerInfo.company = cleanCompany;
-          order.customerInfo.name = cleanCompany;
-          console.log(`Found shipping company "${cleanCompany}" for order ${orderNumber} (original: "${row['Shipping Company']}")`);
-        }
-      } else if (row['Billing Name'] && row['Billing Name'].trim()) {
-        const cleanName = cleanCustomerName(row['Billing Name'].trim());
-        if (cleanName) {
-          order.customerInfo.name = cleanName;
-          console.log(`Found billing name "${cleanName}" for order ${orderNumber} (original: "${row['Billing Name']}")`);
-        }
-      } else if (row['Shipping Name'] && row['Shipping Name'].trim()) {
-        const cleanName = cleanCustomerName(row['Shipping Name'].trim());
-        if (cleanName) {
-          order.customerInfo.name = cleanName;
-          console.log(`Found shipping name "${cleanName}" for order ${orderNumber} (original: "${row['Shipping Name']}")`);
-        }
-      }
-    }
-    
-    // Extract country and city information
-    if (!order.customerInfo.country) {
-      if (row['Billing Country'] && row['Billing Country'].trim()) {
-        order.customerInfo.country = row['Billing Country'].trim();
-      } else if (row['Shipping Country'] && row['Shipping Country'].trim()) {
-        order.customerInfo.country = row['Shipping Country'].trim();
-      }
-    }
-    
-    // Extract city information from column AD (Billing City)
-    if (!order.customerInfo.city) {
-      if (row['Billing City'] && row['Billing City'].trim()) {
-        order.customerInfo.city = row['Billing City'].trim();
-        console.log(`Found city "${order.customerInfo.city}" for order ${orderNumber}`);
-      } else if (row['Shipping City'] && row['Shipping City'].trim()) {
-        order.customerInfo.city = row['Shipping City'].trim();
-        console.log(`Found shipping city "${order.customerInfo.city}" for order ${orderNumber}`);
-      }
-    }
-    
-    // Add line item if it has product information
-    if (row['Lineitem name'] && row['Lineitem quantity']) {
-      order.lineItems.push(row);
-    }
-  });
-  
-  console.log(`=== ORDER SUMMARY ===`);
-  console.log(`Processed ${orderGroups.size} unique orders`);
-  
-  // Debug each order
-  let orderCount = 0;
-  orderGroups.forEach((order, orderNumber) => {
-    orderCount++;
-    if (orderCount <= 5) { // Show first 5 orders for debugging
-      console.log(`Order ${orderNumber}:`);
-      console.log(`  Customer: "${order.customerInfo.name || 'NOT FOUND'}"`);
-      console.log(`  Company: "${order.customerInfo.company || 'NOT FOUND'}"`);
-      console.log(`  Country: "${order.customerInfo.country || 'NOT FOUND'}"`);
-      console.log(`  City: "${order.customerInfo.city || 'NOT FOUND'}"`);
-      console.log(`  Line Items: ${order.lineItems.length}`);
-    }
-  });
-  
-  // Step 2: Create records for each line item
-  const processedRecords = [];
-  
-  orderGroups.forEach((order, orderNumber) => {
-    const customerName = order.customerInfo.name || order.customerInfo.company || 'Unknown Customer';
-    const country = order.customerInfo.country || 'Unknown';
-    const city = order.customerInfo.city || 'Unknown'; // For CSV files
-    
-    order.lineItems.forEach((item) => {
-      const quantity = parseInt(item['Lineitem quantity']) || 0;
-      const itemPrice = parseFloat(item['Lineitem price']) || 0;
-      const totalPrice = itemPrice * quantity;
-      
-      const record = {
-        order_date: parseDate(item['Created at']),
-        cus_no: null,
-        customer_name: customerName,
-        title: item['Lineitem name'] || 'Unknown Product',
-        book_ean: item['Lineitem sku'] || null,
-        quantity: quantity,
-        total: totalPrice,
-        country: country,
-        city: city
-      };
-      
-      processedRecords.push(record);
-    });
-  });
-  
-  console.log(`=== FINAL RESULTS ===`);
-  console.log(`Created ${processedRecords.length} processed records`);
-  
-  // Show first few processed records
-  processedRecords.slice(0, 3).forEach((record, i) => {
-    console.log(`Processed Record ${i + 1}:`);
-    console.log(`  Customer: "${record.customer_name}"`);
-    console.log(`  Country: "${record.country}"`);
-    console.log(`  City: "${record.city}"`);
-    console.log(`  Product: "${record.title}"`);
-    console.log(`  Quantity: ${record.quantity}`);
-    console.log('---');
-  });
-  
-  return processedRecords;
-}
-
-// ENHANCED: Function to clean customer names with special character handling
-function cleanCustomerName(rawName) {
-  if (!rawName || typeof rawName !== 'string') {
-    return null;
-  }
-  
-  console.log(`Cleaning customer name: "${rawName}"`);
-  
-  // Remove leading/trailing whitespace
-  let cleaned = rawName.trim();
-  
-  // Handle special characters and encoding issues
-  cleaned = cleaned
-    // Remove or replace HTML entities
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#\d+;/g, '') // Remove numeric HTML entities
-    
-    // Normalize quotes and apostrophes
-    .replace(/[""]/g, '"')
-    .replace(/['']/g, "'")
-    
-    // Remove control characters and weird whitespace
-    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-    .replace(/[\u2000-\u200B\u2028\u2029\u202F\u205F\u3000]/g, ' ')
-    
-    // Replace multiple spaces with single space
-    .replace(/\s+/g, ' ')
-    
-    // Final trim
-    .trim();
-  
-  // If name contains a comma, take only the part before the first comma
-  if (cleaned.includes(',')) {
-    const beforeComma = cleaned.split(',')[0].trim();
-    console.log(`Split on comma: "${cleaned}" -> "${beforeComma}"`);
-    cleaned = beforeComma;
-  }
-  
-  // Additional cleanup - remove common problematic patterns
-  cleaned = cleaned
-    // Remove common address indicators
-    .replace(/^(c\/o|care of|attn:|attention:)\s+/i, '')
-    // Remove leading numbers that might be addresses
-    .replace(/^\d+[a-zA-Z]?\s+/, '')
-    // Remove trailing address-like patterns
-    .replace(/\s+(ltd|limited|inc|corp|gmbh|srl|bv)\.?$/i, (match) => match) // Keep these
-    .replace(/\s+\d+\s*$/, '') // Remove trailing numbers
-    .trim();
-  
-  // Log what we're doing
-  if (cleaned !== rawName.trim()) {
-    console.log(`Cleaned name: "${rawName}" -> "${cleaned}"`);
-  }
-  
-  // Validation checks
-  
-  // Return null if the cleaned name is empty or too short
-  if (cleaned.length < 2) {
-    console.log(`Rejected - too short: "${rawName}" -> "${cleaned}"`);
-    return null;
-  }
-  
-  // Return null if it looks like an address (starts with numbers)
-  if (/^\d+\s/.test(cleaned)) {
-    console.log(`Rejected - looks like address: "${rawName}" -> "${cleaned}"`);
-    return null;
-  }
-  
-  // Return null if it's only special characters or numbers
-  if (!/[a-zA-Z]/.test(cleaned)) {
-    console.log(`Rejected - no letters: "${rawName}" -> "${cleaned}"`);
-    return null;
-  }
-  
-  // Return null if it's too generic
-  const genericNames = ['customer', 'guest', 'user', 'test', 'admin', 'default'];
-  if (genericNames.includes(cleaned.toLowerCase())) {
-    console.log(`Rejected - generic name: "${rawName}" -> "${cleaned}"`);
-    return null;
-  }
-  
-  console.log(`Accepted customer name: "${cleaned}"`);
-  return cleaned;
-}
-
-// Process Gazelle data (Excel format) with London default city
-function processGazelleData(rawData) {
-  console.log('=== PROCESSING GAZELLE DATA ===');
-  console.log('Raw data length:', rawData.length);
-  
-  const processedRecords = [];
-  
-  rawData.forEach((row, index) => {
-    try {
-      // Skip empty rows
-      if (!row || Object.keys(row).length === 0) return;
-      
-      // Gazelle format processing (existing logic)
-      const keys = Object.keys(row);
-      console.log(`Row ${index + 1} keys:`, keys.slice(0, 10)); // Show first 10 keys
-      
-      const record = {
-        order_date: parseDate(row[keys[0]] || new Date()),
-        cus_no: row[keys[2]] || null,
-        customer_name: row[keys[3]] || 'Unknown',
-        title: row[keys[5]] || 'Unknown',
-        book_ean: row[keys[7]] || null,
-        quantity: parseInt(row[keys[8]]) || 0,
-        total: parseFloat(row[keys[9]]) || 0,
-        country: 'UK', // Default for Gazelle data
-        city: 'London' // Default for Excel files (no city data available)
-      };
-      
-      // Debug output for first few records
-      if (index < 3) {
-        console.log(`Gazelle Record ${index + 1}:`);
-        console.log(`  Date: ${record.order_date}`);
-        console.log(`  Customer: ${record.customer_name}`);
-        console.log(`  City: ${record.city}`);
-        console.log(`  Title: ${record.title}`);
-        console.log(`  Quantity: ${record.quantity}`);
-        console.log('---');
-      }
-      
-      processedRecords.push(record);
-    } catch (error) {
-      console.error(`Error processing Gazelle row ${index + 1}:`, error);
-    }
-  });
-  
-  console.log(`Created ${processedRecords.length} Gazelle records`);
-  return processedRecords;
-}
-
-// Utility function to parse CSV lines (handles quoted values)
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  
-  result.push(current.trim());
-  return result;
-}
-
 // Get records with pagination (500 per page)
 app.get('/records', async (req, res) => {
   try {
@@ -793,4 +712,9 @@ app.delete('/records/:id', async (req, res) => {
   }
 });
 
-//
+// Start server
+initDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+});
