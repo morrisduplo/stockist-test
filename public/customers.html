@@ -4,796 +4,199 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer Management - Sales Database</title>
-    <!-- Import Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        // Handle checkbox changes
-        function handleCheckboxChange(e) {
-            const checkbox = e.target;
-            const customerId = checkbox.dataset.customer;
-            
-            if (checkbox.checked) {
-                selectedCustomers.add(customerId);
-            } else {
-                selectedCustomers.delete(customerId);
-            }
-            
-            updateSelectionCount();
-            updateDebug(`Customer ${customerId} ${checkbox.checked ? 'selected' : 'deselected'}`);
-        }
-
-        // Update selection count display
-        function updateSelectionCount() {
-            const count = selectedCustomers.size;
-            selectionCount.textContent = `${count} selected`;
-        }
-
-        // Select all visible customers
-        function selectAll() {
-            selectedCustomers.clear();
-            filteredData.forEach(customer => {
-                selectedCustomers.add(customer.customer_name);
-            });
-            
-            // Update checkboxes
-            document.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
-                checkbox.checked = true;
-            });
-            
-            updateSelectionCount();
-            updateDebug(`Selected all ${filteredData.length} visible customers`);
-        }
-
-        // Deselect all customers
-        function deselectAll() {
-            selectedCustomers.clear();
-            
-            // Update checkboxes
-            document.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
-                checkbox.checked = false;
-            });
-            
-            updateSelectionCount();
-            updateDebug('Deselected all customers');
-        }
-
-        // Exclude selected customers
-        async function excludeSelected() {
-            if (selectedCustomers.size === 0) {
-                alert('Please select at least one customer to exclude.');
-                return;
-            }
-
-            if (!confirm(`Are you sure you want to exclude ${selectedCustomers.size} customer(s) from future reports?`)) {
-                return;
-            }
-
-            try {
-                const customerList = Array.from(selectedCustomers);
-                updateDebug(`Excluding customers: ${customerList.join(', ')}`);
-
-                const response = await fetch('/api/customers/exclude', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        customers: customerList,
-                        excluded: true
-                    })
-                });
-
-                if (response.ok) {
-                    // Update local data
-                    customersData.forEach(customer => {
-                        if (selectedCustomers.has(customer.customer_name)) {
-                            customer.excluded = true;
-                        }
-                    });
-
-                    deselectAll();
-                    displayCustomers();
-                    updateDebug(`Successfully excluded ${customerList.length} customers`);
-                    alert(`Successfully excluded ${customerList.length} customer(s)`);
-                } else {
-                    throw new Error('Failed to exclude customers');
-                }
-            } catch (error) {
-                alert('Error excluding customers: ' + error.message);
-                updateDebug(`Error excluding customers: ${error.message}`);
-            }
-        }
-
-        // Include selected customers
-        async function includeSelected() {
-            if (selectedCustomers.size === 0) {
-                alert('Please select at least one customer to include.');
-                return;
-            }
-
-            if (!confirm(`Are you sure you want to include ${selectedCustomers.size} customer(s) in future reports?`)) {
-                return;
-            }
-
-            try {
-                const customerList = Array.from(selectedCustomers);
-                updateDebug(`Including customers: ${customerList.join(', ')}`);
-
-                const response = await fetch('/api/customers/exclude', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        customers: customerList,
-                        excluded: false
-                    })
-                });
-
-                if (response.ok) {
-                    // Update local data
-                    customersData.forEach(customer => {
-                        if (selectedCustomers.has(customer.customer_name)) {
-                            customer.excluded = false;
-                        }
-                    });
-
-                    deselectAll();
-                    displayCustomers();
-                    updateDebug(`Successfully included ${customerList.length} customers`);
-                    alert(`Successfully included ${customerList.length} customer(s)`);
-                } else {
-                    throw new Error('Failed to include customers');
-                }
-            } catch (error) {
-                alert('Error including customers: ' + error.message);
-                updateDebug(`Error including customers: ${error.message}`);
-            }
-        }
-
         body {
-            font-family: 'Courier', monospace;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f4;
-            padding: 20px;
+            font-family: Arial, sans-serif;
+            margin: 20px;
         }
-
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'EB Garamond', serif;
-            font-weight: 400;
-        }
-
+        
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #f1f3f4;
-            padding-bottom: 20px;
+        
+        .debug {
+            background: #fff3cd;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
         }
-
-        h1 {
-            color: #333333;
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
         }
-
-        .back-link {
-            color: #666;
-            text-decoration: none;
-            padding: 8px 16px;
-            border: 1px solid #666;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-
-        .back-link:hover {
-            background: #f1f3f4;
-        }
-
-        .filters {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-            align-items: center;
-        }
-
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        select, input {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-family: 'Courier', monospace;
-            font-size: 12px;
-        }
-
-        button {
-            background: #000000;
-            color: white;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: background-color 0.3s;
-        }
-
-        button:hover {
-            background: #333333;
-        }
-
+        
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
-            font-size: 12px;
+            margin: 20px 0;
         }
-
+        
         th, td {
-            padding: 4px 8px;
+            border: 1px solid #ddd;
+            padding: 8px;
             text-align: left;
-            border: none;
-            line-height: 1.2;
         }
-
+        
         th {
-            background-color: #34495e;
+            background-color: #f2f2f2;
+        }
+        
+        button {
+            background: #007bff;
             color: white;
-            font-weight: normal;
-            font-family: 'Courier', monospace;
-            font-size: 14px;
-            text-transform: uppercase;
-            position: sticky;
-            top: 0;
-        }
-
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #7f8c8d;
-        }
-
-        .edit-cell {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
             cursor: pointer;
-            padding: 2px 4px;
-            border-radius: 2px;
+            margin: 5px;
         }
-
-        .edit-cell:hover {
-            background: #e9ecef;
-        }
-
-        .editing {
-            background: #fff3cd !important;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 6px;
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .search-box {
-            width: 300px;
-            margin-right: auto;
-        }
-
-        .debug-info {
-            background: #fff3cd;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-size: 12px;
-            font-family: monospace;
-            border: 1px solid #ffeaa7;
-        }
-
-        .error-message {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border: 1px solid #f5c6cb;
-        }
-
-        .checkbox-cell {
-            text-align: center;
-            width: 80px;
-        }
-
-        .exclusion-checkbox {
-            cursor: pointer;
-            transform: scale(1.2);
-        }
-
-        .excluded-row {
-            background-color: #fff3cd !important;
-            opacity: 0.7;
-        }
-
-        .excluded-row:hover {
-            background-color: #fff3cd !important;
-        }
-
-        .bulk-actions {
-            margin-bottom: 15px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .exclusion-status {
-            font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 11px;
-        }
-
-        .excluded {
-            background: #ffeaa7;
-            color: #636e72;
-        }
-
-        .included {
-            background: #55a3ff;
-            color: white;
+        
+        button:hover {
+            background: #0056b3;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>Customer Management</h1>
-            <a href="/" class="back-link">← Back to Dashboard</a>
+        <h1>Customer Management - Debug Version</h1>
+        <a href="/">← Back to Dashboard</a>
+        
+        <div id="debug" class="debug"></div>
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <button onclick="testAPI()">Test API</button>
+        <button onclick="loadCustomers()">Load Customers</button>
+        
+        <div id="stats">
+            <h3>Stats:</h3>
+            <p>Total Customers: <span id="totalCustomers">-</span></p>
+            <p>Total Orders: <span id="totalOrders">-</span></p>
+            <p>Total Revenue: <span id="totalRevenue">-</span></p>
         </div>
-
-        <!-- Debug Information -->
-        <div id="debugInfo" class="debug-info" style="display: none;">
-            <strong>Debug Information:</strong><br>
-            <div id="debugContent"></div>
-        </div>
-
-        <!-- Error Message -->
-        <div id="errorMessage" class="error-message" style="display: none;">
-            <strong>Error:</strong> <span id="errorText"></span>
-        </div>
-
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-number" id="totalCustomers">-</div>
-                <div class="stat-label">Total Customers</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="totalCountries">-</div>
-                <div class="stat-label">Countries</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="totalOrders">-</div>
-                <div class="stat-label">Total Orders</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="totalRevenue">-</div>
-                <div class="stat-label">Total Revenue</div>
-            </div>
-        </div>
-
-        <div class="filters">
-            <div class="filter-group">
-                <input type="text" id="searchBox" class="search-box" placeholder="Search customers...">
-            </div>
-            <div class="filter-group">
-                <label>Country:</label>
-                <select id="countryFilter">
-                    <option value="">All Countries</option>
-                </select>
-            </div>
-            <button id="refreshBtn">Refresh Data</button>
-            <button id="debugBtn" style="background: #17a2b8;">Toggle Debug</button>
-        </div>
-
-        <div class="bulk-actions">
-            <button id="selectAllBtn">Select All</button>
-            <button id="deselectAllBtn">Deselect All</button>
-            <button id="excludeSelectedBtn" style="background: #e74c3c;">Exclude Selected</button>
-            <button id="includeSelectedBtn" style="background: #27ae60;">Include Selected</button>
-            <span id="selectionCount" style="margin-left: 20px; font-weight: bold;">0 selected</span>
-        </div>
-
+        
         <div id="customersContainer">
-            <div class="loading">Loading customer data...</div>
+            <p>Click "Test API" or "Load Customers" to begin</p>
         </div>
     </div>
 
     <script>
-        // DOM elements
-        const customersContainer = document.getElementById('customersContainer');
-        const refreshBtn = document.getElementById('refreshBtn');
-        const debugBtn = document.getElementById('debugBtn');
-        const searchBox = document.getElementById('searchBox');
-        const countryFilter = document.getElementById('countryFilter');
-        const totalCustomers = document.getElementById('totalCustomers');
-        const totalCountries = document.getElementById('totalCountries');
-        const totalOrders = document.getElementById('totalOrders');
-        const totalRevenue = document.getElementById('totalRevenue');
-        const debugInfo = document.getElementById('debugInfo');
-        const debugContent = document.getElementById('debugContent');
-        const errorMessage = document.getElementById('errorMessage');
-        const errorText = document.getElementById('errorText');
-        const selectAllBtn = document.getElementById('selectAllBtn');
-        const deselectAllBtn = document.getElementById('deselectAllBtn');
-        const excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
-        const includeSelectedBtn = document.getElementById('includeSelectedBtn');
-        const selectionCount = document.getElementById('selectionCount');
-
-        let customersData = [];
-        let filteredData = [];
-        let debugMode = false;
-        let selectedCustomers = new Set();
-
-        // Event listeners
-        refreshBtn.addEventListener('click', loadCustomers);
-        debugBtn.addEventListener('click', toggleDebug);
-        searchBox.addEventListener('input', filterCustomers);
-        countryFilter.addEventListener('change', filterCustomers);
-        selectAllBtn.addEventListener('click', selectAll);
-        deselectAllBtn.addEventListener('click', deselectAll);
-        excludeSelectedBtn.addEventListener('click', excludeSelected);
-        includeSelectedBtn.addEventListener('click', includeSelected);
-
-        function toggleDebug() {
-            debugMode = !debugMode;
-            debugInfo.style.display = debugMode ? 'block' : 'none';
-            debugBtn.textContent = debugMode ? 'Hide Debug' : 'Show Debug';
+        function log(message) {
+            const debug = document.getElementById('debug');
+            debug.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            console.log(message);
         }
-
+        
         function showError(message) {
-            errorText.textContent = message;
-            errorMessage.style.display = 'block';
-            console.error('Customer page error:', message);
+            const error = document.getElementById('error');
+            error.textContent = message;
+            error.style.display = 'block';
+            log('ERROR: ' + message);
         }
-
+        
         function hideError() {
-            errorMessage.style.display = 'none';
+            document.getElementById('error').style.display = 'none';
         }
-
-        function updateDebug(message) {
-            if (debugMode) {
-                debugContent.innerHTML += message + '<br>';
-                console.log('Debug:', message);
+        
+        async function testAPI() {
+            log('Testing API endpoint...');
+            hideError();
+            
+            try {
+                const response = await fetch('/api/customers');
+                log(`Response status: ${response.status} ${response.statusText}`);
+                
+                const data = await response.json();
+                log(`Data received: ${JSON.stringify(data, null, 2)}`);
+                
+                if (response.ok) {
+                    log('API test successful!');
+                } else {
+                    showError('API returned error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
             }
         }
-
-        // Load customer data
+        
         async function loadCustomers() {
+            log('Loading customers...');
+            hideError();
+            
             try {
-                hideError();
-                customersContainer.innerHTML = '<div class="loading">Loading customer data...</div>';
-                
-                updateDebug('Starting customer data load...');
-                updateDebug('Making request to: /api/customers');
-                
                 const response = await fetch('/api/customers');
-                updateDebug(`Response status: ${response.status} ${response.statusText}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 const data = await response.json();
-                updateDebug(`Received data: ${JSON.stringify(data, null, 2)}`);
+                log(`Loaded ${data.customers ? data.customers.length : 0} customers`);
                 
-                customersData = data.customers || [];
-                filteredData = [...customersData];
-                
-                updateDebug(`Customers loaded: ${customersData.length}`);
-                updateDebug(`Stats: ${JSON.stringify(data.stats)}`);
-                
+                // Update stats
                 if (data.stats) {
-                    updateStats(data.stats);
-                } else {
-                    updateDebug('No stats received');
+                    document.getElementById('totalCustomers').textContent = data.stats.total_customers || 0;
+                    document.getElementById('totalOrders').textContent = data.stats.total_orders || 0;
+                    document.getElementById('totalRevenue').textContent = '£' + (data.stats.total_revenue || 0);
                 }
                 
-                updateCountryFilter();
-                displayCustomers();
+                // Display customers
+                displayCustomers(data.customers || []);
                 
             } catch (error) {
-                console.error('Load customers error:', error);
-                showError(error.message);
-                customersContainer.innerHTML = `<div class="no-data">Error loading customer data: ${error.message}</div>`;
-                updateDebug(`Error: ${error.message}`);
+                showError('Failed to load customers: ' + error.message);
             }
         }
-
-        // Update statistics
-        function updateStats(stats) {
-            try {
-                totalCustomers.textContent = (stats.total_customers || 0).toLocaleString();
-                totalCountries.textContent = stats.total_countries || 0;
-                totalOrders.textContent = (stats.total_orders || 0).toLocaleString();
-                totalRevenue.textContent = '£' + (stats.total_revenue || 0).toLocaleString();
-                updateDebug('Stats updated successfully');
-            } catch (error) {
-                updateDebug(`Error updating stats: ${error.message}`);
-            }
-        }
-
-        // Update country filter dropdown
-        function updateCountryFilter() {
-            try {
-                const countries = [...new Set(customersData.map(c => c.country))].sort();
-                const currentValue = countryFilter.value;
-                
-                countryFilter.innerHTML = '<option value="">All Countries</option>';
-                countries.forEach(country => {
-                    const option = document.createElement('option');
-                    option.value = country;
-                    option.textContent = country;
-                    countryFilter.appendChild(option);
-                });
-                
-                countryFilter.value = currentValue;
-                updateDebug(`Country filter updated with ${countries.length} countries: ${countries.join(', ')}`);
-            } catch (error) {
-                updateDebug(`Error updating country filter: ${error.message}`);
-            }
-        }
-
-        // Filter customers
-        function filterCustomers() {
-            try {
-                const searchTerm = searchBox.value.toLowerCase();
-                const selectedCountry = countryFilter.value;
-                
-                filteredData = customersData.filter(customer => {
-                    const matchesSearch = customer.customer_name.toLowerCase().includes(searchTerm);
-                    const matchesCountry = !selectedCountry || customer.country === selectedCountry;
-                    return matchesSearch && matchesCountry;
-                });
-                
-                updateDebug(`Filtered ${customersData.length} customers to ${filteredData.length}`);
-                displayCustomers();
-            } catch (error) {
-                updateDebug(`Error filtering customers: ${error.message}`);
-            }
-        }
-
-        // Display customers table
-        function displayCustomers() {
-            try {
-                if (filteredData.length === 0) {
-                    if (customersData.length === 0) {
-                        customersContainer.innerHTML = '<div class="no-data">No customer data found. Upload some sales data first!</div>';
-                    } else {
-                        customersContainer.innerHTML = '<div class="no-data">No customers match your search criteria.</div>';
-                    }
-                    updateDebug('No customers to display');
-                    return;
-                }
-
-                const table = document.createElement('table');
-                table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>Exclusion</th>
-                            <th>Status</th>
-                            <th>Customer Name</th>
-                            <th>Country</th>
-                            <th>Total Orders</th>
-                            <th>Total Quantity</th>
-                            <th>Total Revenue</th>
-                            <th>Last Order</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${filteredData.map(customer => {
-                            const isExcluded = customer.excluded || false;
-                            const customerId = customer.customer_name;
-                            return `
-                                <tr class="${isExcluded ? 'excluded-row' : ''}" data-customer="${customerId}">
-                                    <td class="checkbox-cell">
-                                        <input type="checkbox" 
-                                               class="exclusion-checkbox" 
-                                               data-customer="${customerId}"
-                                               ${selectedCustomers.has(customerId) ? 'checked' : ''}>
-                                    </td>
-                                    <td>
-                                        <span class="exclusion-status ${isExcluded ? 'excluded' : 'included'}">
-                                            ${isExcluded ? 'EXCLUDED' : 'INCLUDED'}
-                                        </span>
-                                    </td>
-                                    <td>${customer.customer_name || 'N/A'}</td>
-                                    <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
-                                    <td>${customer.total_orders || 0}</td>
-                                    <td>${customer.total_quantity || 0}</td>
-                                    <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
-                                    <td>${customer.last_order ? new Date(customer.last_order).toLocaleDateString() : 'N/A'}</td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                `;
-
-                // Add click handlers for editable cells
-                table.querySelectorAll('.edit-cell').forEach(cell => {
-                    cell.addEventListener('click', makeEditable);
-                });
-
-                // Add change handlers for checkboxes
-                table.querySelectorAll('.exclusion-checkbox').forEach(checkbox => {
-                    checkbox.addEventListener('change', handleCheckboxChange);
-                });
-
-                customersContainer.innerHTML = '';
-                customersContainer.appendChild(table);
-                
-                updateSelectionCount();
-                updateDebug(`Displayed ${filteredData.length} customers in table`);
-
-            } catch (error) {
-                console.error('Display customers error:', error);
-                updateDebug(`Error displaying customers: ${error.message}`);
-                customersContainer.innerHTML = `<div class="no-data">Error displaying customers: ${error.message}</div>`;
-            }
-        }
-
-        // Handle checkbox changes
-        function handleCheckboxChange(e) {
-            const checkbox = e.target;
-            const customerId = checkbox.dataset.customer;
+        
+        function displayCustomers(customers) {
+            const container = document.getElementById('customersContainer');
             
-            if (checkbox.checked) {
-                selectedCustomers.add(customerId);
-            } else {
-                selectedCustomers.delete(customerId);
-            }
-            
-            updateSelectionCount();
-            updateDebug(`Customer ${customerId} ${checkbox.checked ? 'selected' : 'deselected'}`);
-        }
-
-        // Update selection count display
-        function updateSelectionCount() {
-            const count = selectedCustomers.size;
-            selectionCount.textContent = `${count} selected`;
-        }
-
-        // Make cell editable
-        function makeEditable(e) {
-            const cell = e.target;
-            const currentValue = cell.textContent;
-            const customerName = cell.dataset.customer;
-            const field = cell.dataset.field;
-            
-            cell.classList.add('editing');
-            
-            if (field === 'country') {
-                // Create dropdown for country
-                const select = document.createElement('select');
-                const countries = ['UK', 'US', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Other'];
-                
-                countries.forEach(country => {
-                    const option = document.createElement('option');
-                    option.value = country;
-                    option.textContent = country;
-                    if (country === currentValue) option.selected = true;
-                    select.appendChild(option);
-                });
-                
-                cell.innerHTML = '';
-                cell.appendChild(select);
-                select.focus();
-                
-                select.addEventListener('blur', () => saveEdit(cell, customerName, field, select.value, currentValue));
-                select.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        saveEdit(cell, customerName, field, select.value, currentValue);
-                    } else if (e.key === 'Escape') {
-                        cancelEdit(cell, currentValue);
-                    }
-                });
-            }
-        }
-
-        // Save edit
-        async function saveEdit(cell, customerName, field, newValue, oldValue) {
-            if (newValue === oldValue) {
-                cancelEdit(cell, oldValue);
+            if (customers.length === 0) {
+                container.innerHTML = '<p>No customers found.</p>';
                 return;
             }
             
-            try {
-                const response = await fetch('/api/customers/update', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        customerName: customerName,
-                        field: field,
-                        value: newValue
-                    })
-                });
-                
-                if (response.ok) {
-                    cell.textContent = newValue;
-                    cell.classList.remove('editing');
-                    
-                    // Update local data
-                    const customer = customersData.find(c => c.customer_name === customerName);
-                    if (customer) {
-                        customer[field] = newValue;
-                    }
-                    
-                    updateCountryFilter();
-                    updateDebug(`Updated ${customerName} ${field} to ${newValue}`);
-                } else {
-                    throw new Error('Failed to update customer');
-                }
-            } catch (error) {
-                alert('Error updating customer: ' + error.message);
-                cancelEdit(cell, oldValue);
-                updateDebug(`Error updating customer: ${error.message}`);
-            }
+            let html = `
+                <h3>Customers (${customers.length})</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Customer Name</th>
+                            <th>Country</th>
+                            <th>Orders</th>
+                            <th>Revenue</th>
+                            <th>Excluded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            customers.forEach(customer => {
+                html += `
+                    <tr>
+                        <td>${customer.customer_name || 'N/A'}</td>
+                        <td>${customer.country || 'Unknown'}</td>
+                        <td>${customer.total_orders || 0}</td>
+                        <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
+                        <td>${customer.excluded ? 'YES' : 'NO'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+            log(`Displayed ${customers.length} customers in table`);
         }
-
-        // Cancel edit
-        function cancelEdit(cell, originalValue) {
-            cell.textContent = originalValue;
-            cell.classList.remove('editing');
-        }
-
-        // Load customers when page loads
-        updateDebug('Page loaded, starting initial data load...');
+        
+        // Auto-load on page load
+        log('Page loaded');
         loadCustomers();
     </script>
 </body>
