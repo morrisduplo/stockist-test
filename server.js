@@ -40,7 +40,7 @@ const upload = multer({
 // Initialize database tables
 async function initDatabase() {
   try {
-    // Create records table
+    // Create records table with city field
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -52,9 +52,19 @@ async function initDatabase() {
         quantity INTEGER,
         total DECIMAL(10,2),
         country VARCHAR(100),
+        city VARCHAR(100),
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Add city column if it doesn't exist (for existing databases)
+    try {
+      await pool.query('ALTER TABLE records ADD COLUMN city VARCHAR(100)');
+      console.log('Added city column to records table');
+    } catch (err) {
+      // Column probably already exists, ignore error
+      console.log('City column already exists or error adding it:', err.message);
+    }
     
     // Create upload_log table
     await pool.query(`
@@ -193,6 +203,42 @@ app.post('/api/customers/exclude', async (req, res) => {
   }
 });
 
+// API endpoint to update individual records
+app.post('/api/update-record', async (req, res) => {
+  try {
+    const { id, customer_name, country, city, title } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Record ID is required' });
+    }
+    
+    if (!customer_name || customer_name.trim() === '') {
+      return res.status(400).json({ error: 'Customer name is required' });
+    }
+    
+    console.log(`Updating record ${id}: customer="${customer_name}", country="${country}", city="${city}", title="${title}"`);
+    
+    // Update the record
+    const result = await pool.query(`
+      UPDATE records 
+      SET customer_name = $1, country = $2, city = $3, title = $4, upload_date = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING *
+    `, [customer_name.trim(), country, city || 'London', title.trim(), id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    
+    console.log(`Successfully updated record ${id}`);
+    res.json({ success: true, record: result.rows[0] });
+    
+  } catch (error) {
+    console.error('Update record error:', error);
+    res.status(500).json({ error: 'Failed to update record: ' + error.message });
+  }
+});
+
 // Debug endpoint for specific record
 app.get('/debug-record/:id', async (req, res) => {
   try {
@@ -220,6 +266,7 @@ app.get('/debug-record/:id', async (req, res) => {
         customer_name: record.rows[0].customer_name,
         upload_date: record.rows[0].upload_date,
         country: record.rows[0].country,
+        city: record.rows[0].city,
         title: record.rows[0].title
       }
     });
@@ -327,8 +374,8 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     for (const record of processedRecords) {
       try {
         const result = await pool.query(
-          'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-          [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country]
+          'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country, city) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+          [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country, record.city]
         );
         
         insertedRecords.push(result.rows[0]);
@@ -354,7 +401,7 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-// ENHANCED: Shopify data processing function with improved name cleaning
+// ENHANCED: Shopify data processing function with city support
 function processShopifyData(rawData) {
   console.log('=== DEBUGGING CSV PROCESSING ===');
   console.log('Raw data length:', rawData.length);
@@ -368,7 +415,8 @@ function processShopifyData(rawData) {
     col.toLowerCase().includes('name') || 
     col.toLowerCase().includes('company') || 
     col.toLowerCase().includes('billing') ||
-    col.toLowerCase().includes('shipping')
+    col.toLowerCase().includes('shipping') ||
+    col.toLowerCase().includes('city')
   );
   console.log('Customer-related columns:', customerColumns);
   
@@ -381,6 +429,8 @@ function processShopifyData(rawData) {
     console.log('  Shipping Name:', row['Shipping Name']);
     console.log('  Billing Company:', row['Billing Company']);
     console.log('  Shipping Company:', row['Shipping Company']);
+    console.log('  Billing City:', row['Billing City']);
+    console.log('  Shipping City:', row['Shipping City']);
     console.log('  Billing Country:', row['Billing Country']);
     console.log('  Shipping Country:', row['Shipping Country']);
     console.log('  Lineitem name:', row['Lineitem name']);
@@ -404,7 +454,8 @@ function processShopifyData(rawData) {
         customerInfo: {
           name: null,
           company: null,
-          country: null
+          country: null,
+          city: null
         },
         lineItems: []
       });
@@ -444,12 +495,23 @@ function processShopifyData(rawData) {
       }
     }
     
-    // Extract country information
+    // Extract country and city information
     if (!order.customerInfo.country) {
       if (row['Billing Country'] && row['Billing Country'].trim()) {
         order.customerInfo.country = row['Billing Country'].trim();
       } else if (row['Shipping Country'] && row['Shipping Country'].trim()) {
         order.customerInfo.country = row['Shipping Country'].trim();
+      }
+    }
+    
+    // Extract city information from column AD (Billing City)
+    if (!order.customerInfo.city) {
+      if (row['Billing City'] && row['Billing City'].trim()) {
+        order.customerInfo.city = row['Billing City'].trim();
+        console.log(`Found city "${order.customerInfo.city}" for order ${orderNumber}`);
+      } else if (row['Shipping City'] && row['Shipping City'].trim()) {
+        order.customerInfo.city = row['Shipping City'].trim();
+        console.log(`Found shipping city "${order.customerInfo.city}" for order ${orderNumber}`);
       }
     }
     
@@ -471,6 +533,7 @@ function processShopifyData(rawData) {
       console.log(`  Customer: "${order.customerInfo.name || 'NOT FOUND'}"`);
       console.log(`  Company: "${order.customerInfo.company || 'NOT FOUND'}"`);
       console.log(`  Country: "${order.customerInfo.country || 'NOT FOUND'}"`);
+      console.log(`  City: "${order.customerInfo.city || 'NOT FOUND'}"`);
       console.log(`  Line Items: ${order.lineItems.length}`);
     }
   });
@@ -481,6 +544,7 @@ function processShopifyData(rawData) {
   orderGroups.forEach((order, orderNumber) => {
     const customerName = order.customerInfo.name || order.customerInfo.company || 'Unknown Customer';
     const country = order.customerInfo.country || 'Unknown';
+    const city = order.customerInfo.city || 'Unknown'; // For CSV files
     
     order.lineItems.forEach((item) => {
       const quantity = parseInt(item['Lineitem quantity']) || 0;
@@ -495,7 +559,8 @@ function processShopifyData(rawData) {
         book_ean: item['Lineitem sku'] || null,
         quantity: quantity,
         total: totalPrice,
-        country: country
+        country: country,
+        city: city
       };
       
       processedRecords.push(record);
@@ -510,6 +575,7 @@ function processShopifyData(rawData) {
     console.log(`Processed Record ${i + 1}:`);
     console.log(`  Customer: "${record.customer_name}"`);
     console.log(`  Country: "${record.country}"`);
+    console.log(`  City: "${record.city}"`);
     console.log(`  Product: "${record.title}"`);
     console.log(`  Quantity: ${record.quantity}`);
     console.log('---');
@@ -607,7 +673,7 @@ function cleanCustomerName(rawName) {
   return cleaned;
 }
 
-// Process Gazelle data (Excel format)
+// Process Gazelle data (Excel format) with London default city
 function processGazelleData(rawData) {
   console.log('=== PROCESSING GAZELLE DATA ===');
   console.log('Raw data length:', rawData.length);
@@ -631,7 +697,8 @@ function processGazelleData(rawData) {
         book_ean: row[keys[7]] || null,
         quantity: parseInt(row[keys[8]]) || 0,
         total: parseFloat(row[keys[9]]) || 0,
-        country: 'UK' // Default for Gazelle data
+        country: 'UK', // Default for Gazelle data
+        city: 'London' // Default for Excel files (no city data available)
       };
       
       // Debug output for first few records
@@ -639,6 +706,7 @@ function processGazelleData(rawData) {
         console.log(`Gazelle Record ${index + 1}:`);
         console.log(`  Date: ${record.order_date}`);
         console.log(`  Customer: ${record.customer_name}`);
+        console.log(`  City: ${record.city}`);
         console.log(`  Title: ${record.title}`);
         console.log(`  Quantity: ${record.quantity}`);
         console.log('---');
