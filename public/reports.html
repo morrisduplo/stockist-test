@@ -449,6 +449,7 @@
                 </div>
                 <div class="export-buttons">
                     <button type="button" id="exportCsvBtn" class="btn-secondary">Export CSV</button>
+                    <button type="button" id="exportExcelBtn" class="btn-secondary">Export Excel</button>
                     <button type="button" id="exportPrintBtn" class="btn-secondary">Print Report</button>
                 </div>
             </div>
@@ -493,6 +494,7 @@
         const reportSummary = document.getElementById('reportSummary');
         const reportContent = document.getElementById('reportContent');
         const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportExcelBtn = document.getElementById('exportExcelBtn');
         const exportPrintBtn = document.getElementById('exportPrintBtn');
         const filterCustomer = document.getElementById('filterCustomer');
         const filterCountry = document.getElementById('filterCountry');
@@ -558,6 +560,7 @@
         generateReportBtn.addEventListener('click', generateReport);
         clearFormBtn.addEventListener('click', clearForm);
         exportCsvBtn.addEventListener('click', exportToCsv);
+        exportExcelBtn.addEventListener('click', exportToExcel);
         exportPrintBtn.addEventListener('click', printReport);
         filterCustomer.addEventListener('input', filterReportResults);
         filterCountry.addEventListener('change', filterReportResults);
@@ -911,7 +914,7 @@
             renderReportContent(filteredData);
         }
 
-        // Export to CSV - Enhanced version
+        // Export to CSV - Enhanced version with proper country grouping
         function exportToCsv() {
             if (reportData.length === 0) {
                 showError('No data to export');
@@ -924,31 +927,41 @@
                 country: expandCountryName(row.country)
             }));
             
-            // Group data by country count for sorting
-            const countryCustomerCounts = exportData.reduce((acc, item) => {
-                acc[item.country] = (acc[item.country] || 0) + 1;
+            // Group data by country for proper sorting
+            const groupedByCountry = exportData.reduce((acc, item) => {
+                if (!acc[item.country]) {
+                    acc[item.country] = [];
+                }
+                acc[item.country].push(item);
                 return acc;
             }, {});
             
-            // Sort data: by country (by customer count desc), then by city, then by customer name
-            exportData.sort((a, b) => {
-                // First sort by country based on customer count
-                const countryDiff = countryCustomerCounts[b.country] - countryCustomerCounts[a.country];
-                if (countryDiff !== 0) return countryDiff;
+            // Sort countries by customer count (descending)
+            const sortedCountries = Object.keys(groupedByCountry).sort((a, b) => {
+                return groupedByCountry[b].length - groupedByCountry[a].length;
+            });
+            
+            // Build final sorted data array
+            const sortedData = [];
+            sortedCountries.forEach(country => {
+                // Sort customers within this country by city, then by name
+                const countryCustomers = groupedByCountry[country].sort((a, b) => {
+                    // First by city
+                    const cityCompare = (a.city || '').localeCompare(b.city || '');
+                    if (cityCompare !== 0) return cityCompare;
+                    // Then by customer name
+                    return a.customer_name.localeCompare(b.customer_name);
+                });
                 
-                // Then by city alphabetically
-                const cityCompare = (a.city || '').localeCompare(b.city || '');
-                if (cityCompare !== 0) return cityCompare;
-                
-                // Finally by customer name alphabetically
-                return a.customer_name.localeCompare(b.customer_name);
+                // Add all customers from this country to the sorted data
+                sortedData.push(...countryCustomers);
             });
             
             // Create CSV content with limited columns
             const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
             const csvContent = [
                 headers.join(','),
-                ...exportData.map(row => [
+                ...sortedData.map(row => [
                     `"${publisherName.value}"`,
                     `"${row.customer_name.replace(/"/g, '""')}"`,  // Escape quotes in customer names
                     `"${row.city || ''}"`,
@@ -969,6 +982,116 @@
             window.URL.revokeObjectURL(url);
             
             showSuccess('CSV exported successfully');
+        }
+
+        // Export to Excel format
+        function exportToExcel() {
+            if (reportData.length === 0) {
+                showError('No data to export');
+                return;
+            }
+            
+            // Create a copy of the data with expanded country names
+            const exportData = reportData.map(row => ({
+                ...row,
+                country: expandCountryName(row.country)
+            }));
+            
+            // Group data by country for proper sorting
+            const groupedByCountry = exportData.reduce((acc, item) => {
+                if (!acc[item.country]) {
+                    acc[item.country] = [];
+                }
+                acc[item.country].push(item);
+                return acc;
+            }, {});
+            
+            // Sort countries by customer count (descending)
+            const sortedCountries = Object.keys(groupedByCountry).sort((a, b) => {
+                return groupedByCountry[b].length - groupedByCountry[a].length;
+            });
+            
+            // Build final sorted data array
+            const sortedData = [];
+            sortedCountries.forEach(country => {
+                // Sort customers within this country by city, then by name
+                const countryCustomers = groupedByCountry[country].sort((a, b) => {
+                    // First by city
+                    const cityCompare = (a.city || '').localeCompare(b.city || '');
+                    if (cityCompare !== 0) return cityCompare;
+                    // Then by customer name
+                    return a.customer_name.localeCompare(b.customer_name);
+                });
+                
+                // Add all customers from this country to the sorted data
+                sortedData.push(...countryCustomers);
+            });
+            
+            // Create Excel-compatible HTML table
+            let excelContent = `
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" 
+                      xmlns:x="urn:schemas-microsoft-com:office:excel" 
+                      xmlns="http://www.w3.org/TR/REC-html40">
+                <head>
+                    <meta charset="utf-8">
+                    <!--[if gte mso 9]>
+                    <xml>
+                        <x:ExcelWorkbook>
+                            <x:ExcelWorksheets>
+                                <x:ExcelWorksheet>
+                                    <x:Name>Stockists</x:Name>
+                                    <x:WorksheetOptions>
+                                        <x:DisplayGridlines/>
+                                    </x:WorksheetOptions>
+                                </x:ExcelWorksheet>
+                            </x:ExcelWorksheets>
+                        </x:ExcelWorkbook>
+                    </xml>
+                    <![endif]-->
+                    <style>
+                        table { border-collapse: collapse; width: 100%; }
+                        th { background-color: #f2f2f2; font-weight: bold; text-align: left; padding: 8px; border: 1px solid #ddd; }
+                        td { text-align: left; padding: 8px; border: 1px solid #ddd; }
+                    </style>
+                </head>
+                <body>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Publisher</th>
+                                <th>Retailer Name</th>
+                                <th>City</th>
+                                <th>Country</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+            
+            sortedData.forEach(row => {
+                excelContent += `
+                    <tr>
+                        <td>${publisherName.value}</td>
+                        <td>${row.customer_name}</td>
+                        <td>${row.city || ''}</td>
+                        <td>${row.country}</td>
+                    </tr>`;
+            });
+            
+            excelContent += `
+                        </tbody>
+                    </table>
+                </body>
+                </html>`;
+            
+            // Create blob and download as .xls file
+            const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${publisherName.value}_Stockists.xls`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showSuccess('Excel file exported successfully');
         }
 
         // Print report
