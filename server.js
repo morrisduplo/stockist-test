@@ -452,6 +452,99 @@ app.get('/customers', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'customers.html'));
 });
 
+// Serve the reports page
+app.get('/reports', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+});
+
+// API endpoint to get available titles for reports (excluding excluded customers)
+app.get('/api/titles', async (req, res) => {
+  try {
+    console.log('Titles API endpoint called');
+    
+    // Get all unique titles from records, excluding those from excluded customers
+    const result = await pool.query(`
+      SELECT DISTINCT r.title
+      FROM records r
+      LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+      WHERE r.title IS NOT NULL 
+      AND r.title != '' 
+      AND r.title != 'Unknown'
+      AND COALESCE(ce.excluded, false) = false
+      ORDER BY r.title
+    `);
+    
+    const titles = result.rows.map(row => ({
+      title: row.title,
+      excluded: false
+    }));
+    
+    console.log(`Found ${titles.length} available titles`);
+    res.json(titles);
+    
+  } catch (error) {
+    console.error('Titles API error:', error);
+    res.status(500).json({ error: 'Failed to fetch titles: ' + error.message });
+  }
+});
+
+// API endpoint to generate customer reports by titles
+app.post('/api/generate-report', async (req, res) => {
+  try {
+    const { publisher, startDate, endDate, titles } = req.body;
+    
+    console.log('Generate report request:', { publisher, startDate, endDate, titlesCount: titles.length });
+    
+    // Validate inputs
+    if (!publisher || !startDate || !endDate || !titles || titles.length === 0) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // Build the SQL query with excluded customers filter
+    const placeholders = titles.map((_, index) => `$${index + 4}`).join(',');
+    
+    const query = `
+      SELECT 
+        r.customer_name,
+        r.country,
+        r.city,
+        COUNT(*) as total_orders,
+        SUM(r.quantity) as total_quantity,
+        SUM(r.total) as total_revenue,
+        MAX(r.order_date) as last_order
+      FROM records r
+      LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+      WHERE r.order_date >= $1 
+      AND r.order_date <= $2
+      AND r.title IN (${placeholders})
+      AND COALESCE(ce.excluded, false) = false
+      GROUP BY r.customer_name, r.country, r.city
+      ORDER BY total_revenue DESC
+    `;
+    
+    const params = [startDate, endDate, ...titles];
+    
+    console.log('Executing query with params:', params);
+    
+    const result = await pool.query(query, params);
+    
+    console.log(`Report generated: ${result.rows.length} customers found`);
+    
+    res.json({
+      data: result.rows,
+      totalCustomers: result.rows.length,
+      publisher: publisher,
+      startDate: startDate,
+      endDate: endDate,
+      titles: titles
+    });
+    
+  } catch (error) {
+    console.error('Generate report error:', error);
+    res.status(500).json({ error: 'Failed to generate report: ' + error.message });
+  }
+});
+
 // API endpoint to get customer data with statistics including city
 app.get('/api/customers', async (req, res) => {
   try {
