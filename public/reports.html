@@ -1083,8 +1083,14 @@
 
         // Update filter options
         function updateFilterOptions(data) {
-            const countries = [...new Set(data.map(item => item.country))].sort();
-            const cities = [...new Set(data.map(item => item.city))].sort();
+            // Expand country names for display
+            const expandedData = data.map(item => ({
+                ...item,
+                country: expandCountryName(item.country)
+            }));
+            
+            const countries = [...new Set(expandedData.map(item => item.country))].sort();
+            const cities = [...new Set(expandedData.map(item => item.city))].sort();
             
             filterCountry.innerHTML = '<option value="">All Countries</option>' + 
                 countries.map(country => `<option value="${country}">${country}</option>`).join('');
@@ -1100,8 +1106,14 @@
                 return;
             }
 
+            // Expand country names in the data for display
+            const displayData = data.map(item => ({
+                ...item,
+                country: expandCountryName(item.country)
+            }));
+
             // Group by country, then city, then sort customers alphabetically
-            const grouped = data.reduce((acc, item) => {
+            const grouped = displayData.reduce((acc, item) => {
                 if (!acc[item.country]) acc[item.country] = {};
                 if (!acc[item.country][item.city]) acc[item.country][item.city] = [];
                 acc[item.country][item.city].push(item);
@@ -1171,7 +1183,13 @@
             const countryFilter = filterCountry.value;
             const cityFilter = filterCity.value;
             
-            let filteredData = reportData.filter(item => {
+            // Expand country names in report data for filtering
+            const expandedData = reportData.map(item => ({
+                ...item,
+                country: expandCountryName(item.country)
+            }));
+            
+            let filteredData = expandedData.filter(item => {
                 const matchesCustomer = !customerFilter || item.customer_name.toLowerCase().includes(customerFilter);
                 const matchesCountry = !countryFilter || item.country === countryFilter;
                 const matchesCity = !cityFilter || item.city === cityFilter;
