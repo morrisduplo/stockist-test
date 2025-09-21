@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports & Analytics - Antenne Books</title>
+    <title>Generate Stockist Reports - Antenne Books</title>
     <!-- Import Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -381,7 +381,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Reports & Analytics</h1>
+            <h1>Generate Stockist Reports</h1>
             <a href="/" class="back-link">← Back to Dashboard</a>
         </div>
 
@@ -1435,81 +1435,6 @@
             window.URL.revokeObjectURL(url);
             
             showSuccess('TXT file exported successfully');
-        }
-        
-        // Alternative: Export to XLSX format (truly Excel-compatible)
-        function exportToXLSX() {
-            if (reportData.length === 0) {
-                showError('No data to export');
-                return;
-            }
-            
-            // Since we can't use external libraries in this context,
-            // we'll keep the CSV export as the most compatible option
-            // and rename the Excel export to be more accurate
-            
-            // Create a copy of the data with expanded country names
-            const exportData = reportData.map(row => ({
-                ...row,
-                country: expandCountryName(row.country)
-            }));
-            
-            // Group data by country for proper sorting
-            const groupedByCountry = exportData.reduce((acc, item) => {
-                if (!acc[item.country]) {
-                    acc[item.country] = [];
-                }
-                acc[item.country].push(item);
-                return acc;
-            }, {});
-            
-            // Sort countries by customer count (descending)
-            const sortedCountries = Object.keys(groupedByCountry).sort((a, b) => {
-                return groupedByCountry[b].length - groupedByCountry[a].length;
-            });
-            
-            // Build final sorted data array
-            const sortedData = [];
-            sortedCountries.forEach(country => {
-                // Sort customers within this country by city, then by name
-                const countryCustomers = groupedByCountry[country].sort((a, b) => {
-                    // First by city
-                    const cityCompare = (a.city || '').localeCompare(b.city || '');
-                    if (cityCompare !== 0) return cityCompare;
-                    // Then by customer name
-                    return a.customer_name.localeCompare(b.customer_name);
-                });
-                
-                // Add all customers from this country to the sorted data
-                sortedData.push(...countryCustomers);
-            });
-            
-            // Create CSV content that Excel can open without warnings
-            const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
-            const csvContent = [
-                headers.join(','),
-                ...sortedData.map(row => [
-                    `"${publisherName.value}"`,
-                    `"${row.customer_name.replace(/"/g, '""')}"`,
-                    `"${row.city || ''}"`,
-                    `"${row.country}"`
-                ].join(','))
-            ].join('\n');
-            
-            // Create blob and download as CSV (most compatible)
-            const blob = new Blob(['\ufeff' + csvContent], { 
-                type: 'text/csv;charset=utf-8;' 
-            });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            
-            // Use .csv extension for true compatibility
-            a.download = `${publisherName.value}_Stockists_Excel.csv`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-            
-            showSuccess('Excel-compatible file exported successfully');
         }
 
         // Print report
