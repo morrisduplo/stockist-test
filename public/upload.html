@@ -65,112 +65,6 @@
             background: #f1f3f4;
         }
 
-        /* Unknown Customer Management Section */
-        .unknown-management-section {
-            background: #fff3cd;
-            border: 2px solid #ffc107;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-        }
-
-        .unknown-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .unknown-title {
-            font-size: 20px;
-            color: #856404;
-            font-weight: bold;
-        }
-
-        .btn-view-unknown {
-            background: #ffc107;
-            color: #333;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: background-color 0.3s;
-        }
-
-        .btn-view-unknown:hover {
-            background: #e0a800;
-        }
-
-        .unknown-content {
-            display: none;
-            margin-top: 20px;
-        }
-
-        .unknown-content.active {
-            display: block;
-        }
-
-        .unknown-sources-table {
-            width: 100%;
-            margin-top: 15px;
-            border-collapse: collapse;
-            font-size: 11px;
-        }
-
-        .unknown-sources-table th {
-            background: #856404;
-            color: white;
-            padding: 8px;
-            text-align: left;
-            font-size: 10px;
-            text-transform: uppercase;
-        }
-
-        .unknown-sources-table td {
-            padding: 8px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .unknown-sources-table tr:hover {
-            background: #ffeaa7;
-        }
-
-        .btn-fix-unknown {
-            background: #28a745;
-            color: white;
-            padding: 4px 8px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 10px;
-        }
-
-        .btn-fix-unknown:hover {
-            background: #218838;
-        }
-
-        .unknown-edit-form {
-            display: none;
-            padding: 10px;
-            background: white;
-            border: 1px solid #28a745;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-
-        .unknown-edit-form.active {
-            display: block;
-        }
-
-        .edit-input {
-            padding: 6px;
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            margin-right: 10px;
-            font-size: 12px;
-        }
-
         .upload-section {
             background: #ecf0f1;
             padding: 20px;
@@ -523,12 +417,6 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
-
-        .source-info {
-            font-size: 10px;
-            color: #666;
-            font-style: italic;
-        }
     </style>
 </head>
 <body>
@@ -536,22 +424,6 @@
         <div class="header">
             <h1>Upload Sales Data</h1>
             <a href="/" class="back-link">← Back to Dashboard</a>
-        </div>
-        
-        <!-- Unknown Customer Management Section -->
-        <div class="unknown-management-section" id="unknownSection">
-            <div class="unknown-header">
-                <div class="unknown-title">Unknown Customer Management</div>
-                <button id="toggleUnknownBtn" class="btn-view-unknown">View Unknown Sources</button>
-            </div>
-            <div id="unknownContent" class="unknown-content">
-                <p style="color: #856404; margin-bottom: 10px;">
-                    The following sources have created "Unknown" customer records. Click "Fix" to update all records from that source.
-                </p>
-                <div id="unknownSourcesContainer">
-                    <div class="loading">Loading unknown sources...</div>
-                </div>
-            </div>
         </div>
         
         <!-- Upload Section -->
@@ -675,9 +547,6 @@
                     <label for="editTitle">Product Title:</label>
                     <input type="text" id="editTitle">
                 </div>
-                <div class="form-group source-info" id="sourceInfo">
-                    <!-- Source information will be displayed here -->
-                </div>
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn-save">Save Changes</button>
                     <button type="button" id="cancelEdit" class="btn-cancel">Cancel</button>
@@ -707,13 +576,6 @@
         const editModal = document.getElementById('editModal');
         const editForm = document.getElementById('editForm');
         const cancelEdit = document.getElementById('cancelEdit');
-        const sourceInfo = document.getElementById('sourceInfo');
-
-        // Unknown management elements
-        const unknownSection = document.getElementById('unknownSection');
-        const toggleUnknownBtn = document.getElementById('toggleUnknownBtn');
-        const unknownContent = document.getElementById('unknownContent');
-        const unknownSourcesContainer = document.getElementById('unknownSourcesContainer');
 
         // Pagination elements
         const paginationContainer = document.getElementById('paginationContainer');
@@ -728,154 +590,9 @@
         let allRecords = [];
         let filteredRecords = [];
         let currentEditingId = null;
-        let currentEditingRecord = null;
         let currentPage = 1;
         let totalPages = 1;
         let totalRecords = 0;
-        let unknownSources = [];
-
-        // Toggle Unknown Management Section
-        toggleUnknownBtn.addEventListener('click', () => {
-            unknownContent.classList.toggle('active');
-            if (unknownContent.classList.contains('active')) {
-                toggleUnknownBtn.textContent = 'Hide Unknown Sources';
-                loadUnknownSources();
-            } else {
-                toggleUnknownBtn.textContent = 'View Unknown Sources';
-            }
-        });
-
-        // Load Unknown Customer Sources
-        async function loadUnknownSources() {
-            try {
-                unknownSourcesContainer.innerHTML = '<div class="loading">Loading unknown sources...</div>';
-                
-                const response = await fetch('/api/unknown-sources');
-                if (!response.ok) {
-                    throw new Error('Failed to load unknown sources');
-                }
-                
-                unknownSources = await response.json();
-                
-                if (unknownSources.length === 0) {
-                    unknownSourcesContainer.innerHTML = '<p style="color: #856404;">No unknown customer records found. Great job!</p>';
-                    unknownSection.style.display = 'none';
-                    return;
-                }
-                
-                unknownSection.style.display = 'block';
-                
-                const table = document.createElement('table');
-                table.className = 'unknown-sources-table';
-                table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>Source File</th>
-                            <th>Row #</th>
-                            <th>Data Type</th>
-                            <th>Records</th>
-                            <th>Sample Products</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${unknownSources.map((source, index) => `
-                            <tr>
-                                <td>${source.source_file || 'N/A'}</td>
-                                <td>${source.source_row || 'N/A'}</td>
-                                <td>${source.data_type || 'N/A'}</td>
-                                <td>${source.record_count}</td>
-                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${source.sample_products}">
-                                    ${source.sample_products ? source.sample_products.substring(0, 50) + '...' : 'N/A'}
-                                </td>
-                                <td>
-                                    <button class="btn-fix-unknown" onclick="fixUnknownSource(${index})">Fix</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                `;
-                
-                // Add edit form for each source
-                const editFormContainer = document.createElement('div');
-                editFormContainer.id = 'unknownEditContainer';
-                editFormContainer.className = 'unknown-edit-form';
-                editFormContainer.innerHTML = `
-                    <h4>Update Customer Name</h4>
-                    <input type="text" id="unknownCustomerName" class="edit-input" placeholder="Enter correct customer name">
-                    <button onclick="saveUnknownFix()" class="btn-save">Apply to All</button>
-                    <button onclick="cancelUnknownFix()" class="btn-cancel">Cancel</button>
-                    <div id="editingInfo" style="margin-top: 10px; font-size: 11px; color: #666;"></div>
-                `;
-                
-                unknownSourcesContainer.innerHTML = '';
-                unknownSourcesContainer.appendChild(table);
-                unknownSourcesContainer.appendChild(editFormContainer);
-                
-            } catch (error) {
-                unknownSourcesContainer.innerHTML = `<p style="color: red;">Error loading unknown sources: ${error.message}</p>`;
-            }
-        }
-
-        // Fix Unknown Source
-        let currentEditingSource = null;
-        
-        window.fixUnknownSource = function(index) {
-            currentEditingSource = unknownSources[index];
-            const editContainer = document.getElementById('unknownEditContainer');
-            const editingInfo = document.getElementById('editingInfo');
-            
-            editContainer.classList.add('active');
-            editingInfo.innerHTML = `
-                Updating all records from: <strong>${currentEditingSource.source_file}</strong>, Row ${currentEditingSource.source_row}<br>
-                This will update ${currentEditingSource.record_count} record(s)
-            `;
-            
-            document.getElementById('unknownCustomerName').value = '';
-            document.getElementById('unknownCustomerName').focus();
-        };
-        
-        window.saveUnknownFix = async function() {
-            const customerName = document.getElementById('unknownCustomerName').value.trim();
-            
-            if (!customerName) {
-                alert('Please enter a customer name');
-                return;
-            }
-            
-            if (!currentEditingSource) return;
-            
-            try {
-                const response = await fetch('/api/bulk-update-unknown', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        customer_name: customerName,
-                        source_file: currentEditingSource.source_file,
-                        source_row: currentEditingSource.source_row
-                    })
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    showStatus(`${result.message}`, 'success');
-                    document.getElementById('unknownEditContainer').classList.remove('active');
-                    loadUnknownSources(); // Refresh the list
-                    loadRecords(); // Refresh the main records
-                } else {
-                    throw new Error('Failed to update records');
-                }
-            } catch (error) {
-                showStatus('Error updating records: ' + error.message, 'error');
-            }
-        };
-        
-        window.cancelUnknownFix = function() {
-            document.getElementById('unknownEditContainer').classList.remove('active');
-            currentEditingSource = null;
-        };
 
         // Pagination event listeners
         firstPageBtn.addEventListener('click', () => goToPage(1));
@@ -1000,12 +717,7 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    let message = result.message;
-                    if (result.unknownCustomers > 0) {
-                        message += ' - Check Unknown Customer Management section above!';
-                        loadUnknownSources(); // Auto-load unknown sources
-                    }
-                    showStatus(message, 'success');
+                    showStatus(result.message, 'success');
                     fileInput.value = ''; // Clear file input
                     // Reset drop area text
                     fileDropArea.innerHTML = `
@@ -1056,7 +768,6 @@
                         currentPage = 1;
                         loadRecords(); // Refresh the table
                         loadUploadLog(); // Refresh upload log
-                        loadUnknownSources(); // Refresh unknown sources
                     } else {
                         showStatus(result.error, 'error');
                     }
@@ -1089,7 +800,7 @@
             }
         }
 
-        // Load and display upload log with enhanced info
+        // Load and display upload log
         async function loadUploadLog() {
             try {
                 uploadLogContainer.innerHTML = '<div class="loading">Loading upload history...</div>';
@@ -1105,17 +816,14 @@
 
                 logCount.textContent = `${logs.length} upload${logs.length !== 1 ? 's' : ''} recorded`;
 
-                // Create table for upload log with enhanced info
+                // Create table for upload log
                 const table = document.createElement('table');
                 table.innerHTML = `
                     <thead>
                         <tr>
                             <th>ID</th>
                             <th>FILENAME</th>
-                            <th>TYPE</th>
-                            <th>RECORDS</th>
-                            <th>UNKNOWN</th>
-                            <th>SKIPPED</th>
+                            <th>RECORDS IMPORTED</th>
                             <th>UPLOAD DATE</th>
                         </tr>
                     </thead>
@@ -1124,10 +832,7 @@
                             <tr>
                                 <td>${log.id}</td>
                                 <td>${log.filename}</td>
-                                <td>${log.data_type || 'N/A'}</td>
                                 <td>${log.records_count}</td>
-                                <td>${log.unknown_customers || 0}</td>
-                                <td>${log.duplicates_skipped || 0}</td>
                                 <td>${new Date(log.upload_date).toLocaleString()}</td>
                             </tr>
                         `).join('')}
@@ -1143,7 +848,7 @@
             }
         }
 
-        // Load and display records with pagination and source info
+        // Load and display records with pagination
         async function loadRecords() {
             try {
                 recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
@@ -1166,17 +871,6 @@
                 
                 // Apply current filters
                 applyFilters();
-
-                // Check for unknown customers
-                const hasUnknown = allRecords.some(r => 
-                    !r.customer_name || 
-                    r.customer_name === 'Unknown' || 
-                    r.customer_name === 'Unknown Customer'
-                );
-                
-                if (hasUnknown) {
-                    unknownSection.style.display = 'block';
-                }
 
             } catch (error) {
                 recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
@@ -1228,7 +922,7 @@
             displayRecords();
         }
 
-        // Display filtered records with source info
+        // Display filtered records
         function displayRecords() {
             if (filteredRecords.length === 0) {
                 if (allRecords.length === 0) {
@@ -1242,7 +936,7 @@
 
             recordCount.textContent = `${filteredRecords.length} record${filteredRecords.length !== 1 ? 's' : ''} found (${allRecords.length} total on this page)`;
 
-            // Create table with source tracking columns
+            // Create table with corrected headers
             const table = document.createElement('table');
             table.innerHTML = `
                 <thead>
@@ -1256,7 +950,6 @@
                         <th>TOTAL</th>
                         <th>COUNTRY</th>
                         <th>CITY</th>
-                        <th>SOURCE</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1266,18 +959,13 @@
                             <tr class="${isUnknown ? 'unknown-customer' : ''}" data-id="${record.id}">
                                 <td>${record.id}</td>
                                 <td>${record.order_date ? new Date(record.order_date).toLocaleDateString() : '-'}</td>
-                                <td class="editable-cell" data-field="customer_name" onclick="editRecord(${record.id})" style="cursor: pointer; color: ${isUnknown ? '#856404' : '#000'}; font-weight: ${isUnknown ? 'bold' : 'normal'}">
-                                    ${record.customer_name || 'Unknown'}
-                                </td>
+                                <td class="editable-cell" data-field="customer_name">${record.customer_name || 'Unknown'}</td>
                                 <td class="editable-cell" data-field="title">${record.title || '-'}</td>
                                 <td>${record.book_ean || '-'}</td>
                                 <td>${record.quantity || '-'}</td>
                                 <td>${record.total ? '£' + parseFloat(record.total).toFixed(2) : '-'}</td>
                                 <td class="editable-cell" data-field="country">${record.country || '-'}</td>
-                                <td class="editable-cell" data-field="city">${record.city || '-'}</td>
-                                <td class="source-info" title="${record.source_file || 'N/A'} Row ${record.source_row || 'N/A'}">
-                                    ${record.source_file ? record.source_file.substring(0, 15) + '...' : 'N/A'}
-                                </td>
+                                <td class="editable-cell" data-field="city" onclick="editRecord(${record.id})" style="cursor: pointer; color: #17a2b8;">${record.city || 'London'}</td>
                             </tr>
                         `;
                     }).join('')}
@@ -1288,28 +976,18 @@
             recordsContainer.appendChild(table);
         }
 
-        // Edit record function with source info display
+        // Edit record function
         function editRecord(id) {
             const record = allRecords.find(r => r.id === id);
             if (!record) return;
 
             currentEditingId = id;
-            currentEditingRecord = record;
             
             // Populate form
             document.getElementById('editCustomerName').value = record.customer_name || '';
             document.getElementById('editCountry').value = record.country || 'UK';
-            document.getElementById('editCity').value = record.city || '';
+            document.getElementById('editCity').value = record.city || 'London';
             document.getElementById('editTitle').value = record.title || '';
-
-            // Show source information
-            sourceInfo.innerHTML = `
-                <strong>Source Information:</strong><br>
-                File: ${record.source_file || 'Unknown'}<br>
-                Row: ${record.source_row || 'Unknown'}<br>
-                Type: ${record.data_type || 'Unknown'}<br>
-                <small style="color: #666;">This will only update this single record. To update all records from this source, use the Unknown Customer Management section above.</small>
-            `;
 
             // Show modal
             editModal.style.display = 'block';
@@ -1319,7 +997,6 @@
         function closeEditModal() {
             editModal.style.display = 'none';
             currentEditingId = null;
-            currentEditingRecord = null;
         }
 
         // Save record changes
@@ -1328,7 +1005,7 @@
 
             const customerName = document.getElementById('editCustomerName').value.trim();
             const country = document.getElementById('editCountry').value;
-            const city = document.getElementById('editCity').value.trim() || 'Unknown';
+            const city = document.getElementById('editCity').value.trim() || 'London';
             const title = document.getElementById('editTitle').value.trim();
 
             if (!customerName) {
@@ -1352,15 +1029,9 @@
                 });
 
                 if (response.ok) {
-                    const result = await response.json();
-                    if (result.original && result.original.source_file && result.original.source_row) {
-                        showStatus(`Record updated successfully (from ${result.original.source_file} row ${result.original.source_row})`, 'success');
-                    } else {
-                        showStatus('Record updated successfully', 'success');
-                    }
+                    showStatus('Record updated successfully', 'success');
                     closeEditModal();
                     loadRecords(); // Refresh the data
-                    loadUnknownSources(); // Refresh unknown sources if visible
                 } else {
                     const error = await response.json();
                     showStatus('Error updating record: ' + error.error, 'error');
@@ -1380,10 +1051,9 @@
         // Make editRecord globally available
         window.editRecord = editRecord;
 
-        // Load initial data
+        // Load records and upload log when page loads
         loadUploadLog();
         loadRecords();
-        loadUnknownSources();
     </script>
 </body>
 </html>
