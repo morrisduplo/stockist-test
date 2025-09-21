@@ -333,7 +333,7 @@ function processShopifyData(rawData) {
   return processedRecords;
 }
 
-// Process Gazelle data (Excel format) with London default city
+// Process Gazelle data (Excel format) with Unknown defaults
 function processGazelleData(rawData) {
   console.log('=== PROCESSING GAZELLE DATA ===');
   console.log('Raw data length:', rawData.length);
@@ -345,7 +345,7 @@ function processGazelleData(rawData) {
       // Skip empty rows
       if (!row || Object.keys(row).length === 0) return;
       
-      // Gazelle format processing (existing logic)
+      // Gazelle format processing with UNKNOWN defaults instead of UK/London
       const keys = Object.keys(row);
       
       const record = {
@@ -356,8 +356,8 @@ function processGazelleData(rawData) {
         book_ean: row[keys[7]] || null,
         quantity: parseInt(row[keys[8]]) || 0,
         total: parseFloat(row[keys[9]]) || 0,
-        country: 'UK', // Default for Gazelle data
-        city: 'London' // Default for Excel files (no city data available)
+        country: 'Unknown', // Changed from 'UK' to 'Unknown'
+        city: 'Unknown' // Changed from 'London' to 'Unknown'
       };
       
       processedRecords.push(record);
@@ -502,13 +502,13 @@ app.post('/api/update-record', async (req, res) => {
     
     console.log(`Updating record ${id}: customer="${customer_name}", country="${country}", city="${city}", title="${title}"`);
     
-    // Update the record
+    // Update the record - use 'Unknown' as default for city
     const result = await pool.query(`
       UPDATE records 
       SET customer_name = $1, country = $2, city = $3, title = $4, upload_date = CURRENT_TIMESTAMP
       WHERE id = $5
       RETURNING *
-    `, [customer_name.trim(), country, city || 'London', title.trim(), id]);
+    `, [customer_name.trim(), country, city || 'Unknown', title.trim(), id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Record not found' });
