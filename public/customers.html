@@ -178,7 +178,7 @@
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -466,10 +466,6 @@
                 <div class="stat-number" id="totalOrders">-</div>
                 <div class="stat-label">Total Orders</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number" id="totalRevenue">-</div>
-                <div class="stat-label">Total Revenue</div>
-            </div>
         </div>
 
         <div class="filters">
@@ -525,7 +521,6 @@
         const totalCustomers = document.getElementById('totalCustomers');
         const totalCountries = document.getElementById('totalCountries');
         const totalOrders = document.getElementById('totalOrders');
-        const totalRevenue = document.getElementById('totalRevenue');
         const selectAllBtn = document.getElementById('selectAllBtn');
         const deselectAllBtn = document.getElementById('deselectAllBtn');
         const excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
@@ -821,12 +816,12 @@
             }
         }
 
-        // Update statistics
+        // Update statistics - REMOVED TOTAL REVENUE
         function updateStats(stats) {
             totalCustomers.textContent = (stats.total_customers || 0).toLocaleString();
             totalCountries.textContent = stats.total_countries || 0;
             totalOrders.textContent = (stats.total_orders || 0).toLocaleString();
-            totalRevenue.textContent = '£' + (stats.total_revenue || 0).toLocaleString();
+            // Removed the totalRevenue update
         }
 
         // Update country filter dropdown
