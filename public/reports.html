@@ -1364,13 +1364,12 @@
             let txtContent = `STOCKIST REPORT\n`;
             txtContent += `================\n\n`;
             txtContent += `Publisher: ${publisherName.value}\n`;
-            txtContent += `Report Generated: ${new Date().toLocaleDateString()}\n`;
+            txtContent += `Report Generated: ${new Date().toLocaleDateString('en-GB')}\n`;
             txtContent += `Date Range: ${startDate.value} to ${endDate.value}\n`;
-            txtContent += `Total Customers: ${exportData.length}\n\n`;
-            txtContent += `=====================================\n\n`;
+            txtContent += `Total Customers: ${exportData.length}\n\n\n\n`;
             
             // Add data organized by country
-            sortedCountries.forEach(country => {
+            sortedCountries.forEach((country, countryIndex) => {
                 const countryCustomers = groupedByCountry[country].sort((a, b) => {
                     // First by city
                     const cityCompare = (a.city || '').localeCompare(b.city || '');
@@ -1379,31 +1378,34 @@
                     return a.customer_name.localeCompare(b.customer_name);
                 });
                 
-                txtContent += `COUNTRY: ${country} (${countryCustomers.length} customers)\n`;
-                txtContent += `-------------------------------------\n`;
+                // Add country header
+                txtContent += `${country} \n`;
+                txtContent += `-------------------------------------\n\n`;
                 
                 // Group by city within country
                 const citiesInCountry = [...new Set(countryCustomers.map(c => c.city || 'Unknown'))].sort();
                 
-                citiesInCountry.forEach(city => {
+                citiesInCountry.forEach((city, cityIndex) => {
                     const cityCustomers = countryCustomers.filter(c => (c.city || 'Unknown') === city);
-                    txtContent += `\n  CITY: ${city}\n`;
-                    txtContent += `  ~~~~~~~~~~\n`;
                     
+                    // Add city name
+                    txtContent += `${city}\n`;
+                    
+                    // Add customers for this city
                     cityCustomers.forEach(customer => {
-                        txtContent += `    • ${customer.customer_name}\n`;
+                        txtContent += `- ${customer.customer_name}\n`;
                     });
+                    
+                    // Add spacing between cities (but not after the last city)
+                    if (cityIndex < citiesInCountry.length - 1) {
+                        txtContent += `\n`;
+                    }
                 });
                 
-                txtContent += `\n=====================================\n\n`;
-            });
-            
-            // Add summary at the end
-            txtContent += `SUMMARY BY COUNTRY\n`;
-            txtContent += `------------------\n`;
-            sortedCountries.forEach(country => {
-                const count = groupedByCountry[country].length;
-                txtContent += `${country}: ${count} customer${count !== 1 ? 's' : ''}\n`;
+                // Add spacing between countries (two blank lines)
+                if (countryIndex < sortedCountries.length - 1) {
+                    txtContent += `\n\n\n`;
+                }
             });
             
             // Create blob and download
