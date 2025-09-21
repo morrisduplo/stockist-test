@@ -37,6 +37,36 @@ const upload = multer({
   }
 });
 
+// ============================================
+// CUSTOMER NAME MAPPING CONFIGURATION
+// ============================================
+// Add your customer name mappings here
+// The system will automatically replace any customer name on the left with the name on the right
+const CUSTOMER_NAME_MAPPINGS = {
+  'ANTENNE - DIRECT UK': 'Antenne Online UK',
+  'ANTENNE - EXPORT': 'Antenne Online UK',
+  // Add more mappings as needed in the future:
+  // 'OLD NAME': 'NEW NAME',
+  // 'ANOTHER OLD NAME': 'ANOTHER NEW NAME',
+};
+
+// Function to apply customer name mapping
+function applyCustomerNameMapping(customerName) {
+  if (!customerName) return customerName;
+  
+  // Check if this customer name should be mapped to another name
+  const upperCustomerName = customerName.toUpperCase().trim();
+  
+  for (const [oldName, newName] of Object.entries(CUSTOMER_NAME_MAPPINGS)) {
+    if (upperCustomerName === oldName.toUpperCase()) {
+      console.log(`Mapping customer name: "${customerName}" -> "${newName}"`);
+      return newName;
+    }
+  }
+  
+  return customerName; // Return original if no mapping found
+}
+
 // Initialize database tables
 async function initDatabase() {
   try {
@@ -236,6 +266,9 @@ function cleanCustomerName(rawName) {
     return null;
   }
   
+  // APPLY CUSTOMER NAME MAPPING HERE
+  cleaned = applyCustomerNameMapping(cleaned);
+  
   console.log(`Accepted customer name: "${cleaned}"`);
   return cleaned;
 }
@@ -266,7 +299,7 @@ async function recordExists(orderRef, title, ean, quantity, total) {
   }
 }
 
-// Process Shopify data (CSV format) with duplicate prevention
+// Process Shopify data (CSV format) with duplicate prevention and customer mapping
 function processShopifyData(rawData) {
   console.log('=== DEBUGGING CSV PROCESSING ===');
   console.log('Raw data length:', rawData.length);
@@ -389,12 +422,13 @@ function processShopifyData(rawData) {
   return processedRecords;
 }
 
-// Process Gazelle data (Excel format) with Unknown defaults and duplicate prevention
+// Process Gazelle data (Excel format) with Unknown defaults, duplicate prevention, and customer mapping
 function processGazelleData(rawData) {
   console.log('=== PROCESSING GAZELLE DATA ===');
   console.log('Raw data length:', rawData.length);
   
   const processedRecords = [];
+  let mappedCustomerCount = 0;
   
   rawData.forEach((row, index) => {
     try {
@@ -403,6 +437,18 @@ function processGazelleData(rawData) {
       
       // Gazelle format processing with duplicate prevention
       const keys = Object.keys(row);
+      
+      // Get customer name and apply mapping
+      let customerName = row[keys[3]] || 'Unknown'; // Column D (index 3)
+      
+      // Apply customer name mapping for Gazelle data
+      const originalName = customerName;
+      customerName = applyCustomerNameMapping(customerName);
+      
+      if (originalName !== customerName) {
+        mappedCustomerCount++;
+        console.log(`Row ${index + 1}: Mapped customer "${originalName}" to "${customerName}"`);
+      }
       
       // Column E contains the Invoice number (unique order reference)
       const invoiceNumber = row[keys[4]] || `INV_${index}_${Date.now()}`; // Column E (index 4)
@@ -414,7 +460,7 @@ function processGazelleData(rawData) {
       const record = {
         order_date: parseDate(row[keys[0]] || new Date()),
         cus_no: row[keys[2]] || null,
-        customer_name: row[keys[3]] || 'Unknown',
+        customer_name: customerName,
         title: title,
         book_ean: ean,
         quantity: quantity,
@@ -430,6 +476,10 @@ function processGazelleData(rawData) {
       console.error(`Error processing Gazelle row ${index + 1}:`, error);
     }
   });
+  
+  if (mappedCustomerCount > 0) {
+    console.log(`Total customer names mapped: ${mappedCustomerCount}`);
+  }
   
   console.log(`Created ${processedRecords.length} Gazelle records`);
   return processedRecords;
