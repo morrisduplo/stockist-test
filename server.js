@@ -500,9 +500,7 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    // Build the SQL query with excluded customers filter
-    const placeholders = titles.map((_, index) => `$${index + 4}`).join(',');
-    
+    // Build the SQL query with excluded customers filter using PostgreSQL array
     const query = `
       SELECT 
         r.customer_name,
@@ -516,15 +514,15 @@ app.post('/api/generate-report', async (req, res) => {
       LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
       WHERE r.order_date >= $1 
       AND r.order_date <= $2
-      AND r.title IN (${placeholders})
+      AND r.title = ANY($3::text[])
       AND COALESCE(ce.excluded, false) = false
       GROUP BY r.customer_name, r.country, r.city
       ORDER BY total_revenue DESC
     `;
     
-    const params = [startDate, endDate, ...titles];
+    const params = [startDate, endDate, titles];
     
-    console.log('Executing query with params:', params);
+    console.log('Executing query with params:', { startDate, endDate, titlesCount: titles.length });
     
     const result = await pool.query(query, params);
     
