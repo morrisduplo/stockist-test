@@ -450,6 +450,7 @@
                 <div class="export-buttons">
                     <button type="button" id="exportCsvBtn" class="btn-secondary">Export CSV</button>
                     <button type="button" id="exportExcelBtn" class="btn-secondary">Export Excel</button>
+                    <button type="button" id="exportTxtBtn" class="btn-secondary">Export TXT</button>
                     <button type="button" id="exportPrintBtn" class="btn-secondary">Print Report</button>
                 </div>
             </div>
@@ -495,6 +496,7 @@
         const reportContent = document.getElementById('reportContent');
         const exportCsvBtn = document.getElementById('exportCsvBtn');
         const exportExcelBtn = document.getElementById('exportExcelBtn');
+        const exportTxtBtn = document.getElementById('exportTxtBtn');
         const exportPrintBtn = document.getElementById('exportPrintBtn');
         const filterCustomer = document.getElementById('filterCustomer');
         const filterCountry = document.getElementById('filterCountry');
@@ -504,12 +506,11 @@
         const errorText = document.getElementById('errorText');
         const successText = document.getElementById('successText');
 
-        // Country code to full name mapping
+        // Country code to full name mapping - Complete global list
         const countryCodeMap = {
+            // Europe
             'UK': 'United Kingdom',
             'GB': 'United Kingdom',
-            'US': 'United States',
-            'USA': 'United States',
             'FR': 'France',
             'DE': 'Germany',
             'IT': 'Italy',
@@ -529,21 +530,291 @@
             'HU': 'Hungary',
             'RO': 'Romania',
             'GR': 'Greece',
+            'BG': 'Bulgaria',
+            'HR': 'Croatia',
+            'SK': 'Slovakia',
+            'SI': 'Slovenia',
+            'LT': 'Lithuania',
+            'LV': 'Latvia',
+            'EE': 'Estonia',
+            'LU': 'Luxembourg',
+            'MT': 'Malta',
+            'CY': 'Cyprus',
+            'IS': 'Iceland',
+            'LI': 'Liechtenstein',
+            'MC': 'Monaco',
+            'SM': 'San Marino',
+            'VA': 'Vatican City',
+            'AD': 'Andorra',
+            'RS': 'Serbia',
+            'ME': 'Montenegro',
+            'MK': 'North Macedonia',
+            'AL': 'Albania',
+            'BA': 'Bosnia and Herzegovina',
+            'XK': 'Kosovo',
+            'MD': 'Moldova',
+            'UA': 'Ukraine',
+            'BY': 'Belarus',
+            'RU': 'Russia',
+            
+            // Americas
+            'US': 'United States',
+            'USA': 'United States',
             'CA': 'Canada',
+            'MX': 'Mexico',
+            'BR': 'Brazil',
+            'AR': 'Argentina',
+            'CL': 'Chile',
+            'CO': 'Colombia',
+            'PE': 'Peru',
+            'VE': 'Venezuela',
+            'EC': 'Ecuador',
+            'BO': 'Bolivia',
+            'PY': 'Paraguay',
+            'UY': 'Uruguay',
+            'GY': 'Guyana',
+            'SR': 'Suriname',
+            'GF': 'French Guiana',
+            'CR': 'Costa Rica',
+            'PA': 'Panama',
+            'NI': 'Nicaragua',
+            'HN': 'Honduras',
+            'SV': 'El Salvador',
+            'GT': 'Guatemala',
+            'BZ': 'Belize',
+            'CU': 'Cuba',
+            'DO': 'Dominican Republic',
+            'HT': 'Haiti',
+            'JM': 'Jamaica',
+            'TT': 'Trinidad and Tobago',
+            'BB': 'Barbados',
+            'BS': 'Bahamas',
+            'AG': 'Antigua and Barbuda',
+            'DM': 'Dominica',
+            'GD': 'Grenada',
+            'KN': 'Saint Kitts and Nevis',
+            'LC': 'Saint Lucia',
+            'VC': 'Saint Vincent and the Grenadines',
+            
+            // Asia
+            'CN': 'China',
+            'JP': 'Japan',
+            'KR': 'South Korea',
+            'KP': 'North Korea',
+            'IN': 'India',
+            'PK': 'Pakistan',
+            'BD': 'Bangladesh',
+            'LK': 'Sri Lanka',
+            'NP': 'Nepal',
+            'BT': 'Bhutan',
+            'MM': 'Myanmar',
+            'TH': 'Thailand',
+            'VN': 'Vietnam',
+            'LA': 'Laos',
+            'KH': 'Cambodia',
+            'MY': 'Malaysia',
+            'SG': 'Singapore',
+            'ID': 'Indonesia',
+            'PH': 'Philippines',
+            'TL': 'Timor-Leste',
+            'BN': 'Brunei',
+            'TW': 'Taiwan',
+            'HK': 'Hong Kong',
+            'MO': 'Macau',
+            'MN': 'Mongolia',
+            'KZ': 'Kazakhstan',
+            'UZ': 'Uzbekistan',
+            'TM': 'Turkmenistan',
+            'KG': 'Kyrgyzstan',
+            'TJ': 'Tajikistan',
+            'AF': 'Afghanistan',
+            'IR': 'Iran',
+            'IQ': 'Iraq',
+            'SY': 'Syria',
+            'LB': 'Lebanon',
+            'JO': 'Jordan',
+            'IL': 'Israel',
+            'PS': 'Palestine',
+            'SA': 'Saudi Arabia',
+            'YE': 'Yemen',
+            'OM': 'Oman',
+            'AE': 'United Arab Emirates',
+            'QA': 'Qatar',
+            'BH': 'Bahrain',
+            'KW': 'Kuwait',
+            'TR': 'Turkey',
+            'GE': 'Georgia',
+            'AM': 'Armenia',
+            'AZ': 'Azerbaijan',
+            'MV': 'Maldives',
+            
+            // Africa
+            'ZA': 'South Africa',
+            'EG': 'Egypt',
+            'NG': 'Nigeria',
+            'ET': 'Ethiopia',
+            'KE': 'Kenya',
+            'UG': 'Uganda',
+            'TZ': 'Tanzania',
+            'GH': 'Ghana',
+            'CI': 'Ivory Coast',
+            'SN': 'Senegal',
+            'ML': 'Mali',
+            'BF': 'Burkina Faso',
+            'NE': 'Niger',
+            'TD': 'Chad',
+            'SD': 'Sudan',
+            'SS': 'South Sudan',
+            'DZ': 'Algeria',
+            'MA': 'Morocco',
+            'TN': 'Tunisia',
+            'LY': 'Libya',
+            'MR': 'Mauritania',
+            'ER': 'Eritrea',
+            'DJ': 'Djibouti',
+            'SO': 'Somalia',
+            'RW': 'Rwanda',
+            'BI': 'Burundi',
+            'CM': 'Cameroon',
+            'CF': 'Central African Republic',
+            'CG': 'Republic of the Congo',
+            'CD': 'Democratic Republic of the Congo',
+            'GA': 'Gabon',
+            'GQ': 'Equatorial Guinea',
+            'AO': 'Angola',
+            'ZM': 'Zambia',
+            'ZW': 'Zimbabwe',
+            'NA': 'Namibia',
+            'BW': 'Botswana',
+            'SZ': 'Eswatini',
+            'LS': 'Lesotho',
+            'MZ': 'Mozambique',
+            'MW': 'Malawi',
+            'MG': 'Madagascar',
+            'MU': 'Mauritius',
+            'SC': 'Seychelles',
+            'KM': 'Comoros',
+            'CV': 'Cape Verde',
+            'ST': 'Sao Tome and Principe',
+            'GW': 'Guinea-Bissau',
+            'GN': 'Guinea',
+            'SL': 'Sierra Leone',
+            'LR': 'Liberia',
+            'TG': 'Togo',
+            'BJ': 'Benin',
+            'GM': 'Gambia',
+            
+            // Oceania
             'AU': 'Australia',
             'NZ': 'New Zealand',
-            'JP': 'Japan',
-            'CN': 'China',
-            'IN': 'India',
-            'BR': 'Brazil',
-            'MX': 'Mexico',
-            'AR': 'Argentina',
-            'ZA': 'South Africa',
-            'SG': 'Singapore',
-            'HK': 'Hong Kong',
-            'KR': 'South Korea',
-            'TW': 'Taiwan',
-            'Unknown': 'Unknown'
+            'PG': 'Papua New Guinea',
+            'FJ': 'Fiji',
+            'SB': 'Solomon Islands',
+            'VU': 'Vanuatu',
+            'NC': 'New Caledonia',
+            'PF': 'French Polynesia',
+            'WS': 'Samoa',
+            'TO': 'Tonga',
+            'KI': 'Kiribati',
+            'PW': 'Palau',
+            'FM': 'Micronesia',
+            'MH': 'Marshall Islands',
+            'NR': 'Nauru',
+            'TV': 'Tuvalu',
+            'CK': 'Cook Islands',
+            'NU': 'Niue',
+            
+            // Special cases and variations
+            'USA': 'United States',
+            'UAE': 'United Arab Emirates',
+            'ROK': 'South Korea',
+            'DPRK': 'North Korea',
+            'RSA': 'South Africa',
+            'NED': 'Netherlands',
+            'GER': 'Germany',
+            'SUI': 'Switzerland',
+            'AUT': 'Austria',
+            'BEL': 'Belgium',
+            'ESP': 'Spain',
+            'POR': 'Portugal',
+            'ITA': 'Italy',
+            'FRA': 'France',
+            'ENG': 'England',
+            'SCO': 'Scotland',
+            'WAL': 'Wales',
+            'NIR': 'Northern Ireland',
+            'IRE': 'Ireland',
+            'DEN': 'Denmark',
+            'SWE': 'Sweden',
+            'NOR': 'Norway',
+            'FIN': 'Finland',
+            'POL': 'Poland',
+            'CZE': 'Czech Republic',
+            'SVK': 'Slovakia',
+            'HUN': 'Hungary',
+            'ROM': 'Romania',
+            'BUL': 'Bulgaria',
+            'GRE': 'Greece',
+            'CRO': 'Croatia',
+            'SRB': 'Serbia',
+            'BIH': 'Bosnia and Herzegovina',
+            'MKD': 'North Macedonia',
+            'ALB': 'Albania',
+            'LTU': 'Lithuania',
+            'LAT': 'Latvia',
+            'EST': 'Estonia',
+            'BLR': 'Belarus',
+            'UKR': 'Ukraine',
+            'RUS': 'Russia',
+            'GEO': 'Georgia',
+            'ARM': 'Armenia',
+            'AZE': 'Azerbaijan',
+            'TUR': 'Turkey',
+            'CYP': 'Cyprus',
+            'ISR': 'Israel',
+            'PAL': 'Palestine',
+            'JPN': 'Japan',
+            'CHN': 'China',
+            'IND': 'India',
+            'PAK': 'Pakistan',
+            'BAN': 'Bangladesh',
+            'SRI': 'Sri Lanka',
+            'THA': 'Thailand',
+            'VIE': 'Vietnam',
+            'MAL': 'Malaysia',
+            'SIN': 'Singapore',
+            'INA': 'Indonesia',
+            'PHI': 'Philippines',
+            'AUS': 'Australia',
+            'NZL': 'New Zealand',
+            'ARG': 'Argentina',
+            'BRA': 'Brazil',
+            'CHI': 'Chile',
+            'COL': 'Colombia',
+            'MEX': 'Mexico',
+            'PER': 'Peru',
+            'URU': 'Uruguay',
+            'VEN': 'Venezuela',
+            'CAN': 'Canada',
+            'CRC': 'Costa Rica',
+            'PAN': 'Panama',
+            'CUB': 'Cuba',
+            'JAM': 'Jamaica',
+            'HAI': 'Haiti',
+            'DOM': 'Dominican Republic',
+            'EGY': 'Egypt',
+            'RSA': 'South Africa',
+            'NIG': 'Nigeria',
+            'KEN': 'Kenya',
+            'ETH': 'Ethiopia',
+            'GHA': 'Ghana',
+            'SEN': 'Senegal',
+            'MAR': 'Morocco',
+            'ALG': 'Algeria',
+            'TUN': 'Tunisia',
+            'Unknown': 'Unknown',
+            'UNKNOWN': 'Unknown',
+            '': 'Unknown'
         };
 
         // Function to expand country code to full name
@@ -561,6 +832,7 @@
         clearFormBtn.addEventListener('click', clearForm);
         exportCsvBtn.addEventListener('click', exportToCsv);
         exportExcelBtn.addEventListener('click', exportToExcel);
+        exportTxtBtn.addEventListener('click', exportToTxt);
         exportPrintBtn.addEventListener('click', printReport);
         filterCustomer.addEventListener('input', filterReportResults);
         filterCountry.addEventListener('change', filterReportResults);
@@ -1027,71 +1299,198 @@
                 sortedData.push(...countryCustomers);
             });
             
-            // Create Excel-compatible HTML table
-            let excelContent = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" 
-                      xmlns:x="urn:schemas-microsoft-com:office:excel" 
-                      xmlns="http://www.w3.org/TR/REC-html40">
-                <head>
-                    <meta charset="utf-8">
-                    <!--[if gte mso 9]>
-                    <xml>
-                        <x:ExcelWorkbook>
-                            <x:ExcelWorksheets>
-                                <x:ExcelWorksheet>
-                                    <x:Name>Stockists</x:Name>
-                                    <x:WorksheetOptions>
-                                        <x:DisplayGridlines/>
-                                    </x:WorksheetOptions>
-                                </x:ExcelWorksheet>
-                            </x:ExcelWorksheets>
-                        </x:ExcelWorkbook>
-                    </xml>
-                    <![endif]-->
-                    <style>
-                        table { border-collapse: collapse; width: 100%; }
-                        th { background-color: #f2f2f2; font-weight: bold; text-align: left; padding: 8px; border: 1px solid #ddd; }
-                        td { text-align: left; padding: 8px; border: 1px solid #ddd; }
-                    </style>
-                </head>
-                <body>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Publisher</th>
-                                <th>Retailer Name</th>
-                                <th>City</th>
-                                <th>Country</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
+            // Create tab-separated values for Excel (more compatible than CSV for .xls)
+            const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
+            
+            // Build the content as tab-separated values
+            let excelContent = headers.join('\t') + '\n';
             
             sortedData.forEach(row => {
-                excelContent += `
-                    <tr>
-                        <td>${publisherName.value}</td>
-                        <td>${row.customer_name}</td>
-                        <td>${row.city || ''}</td>
-                        <td>${row.country}</td>
-                    </tr>`;
+                const rowData = [
+                    publisherName.value,
+                    row.customer_name,
+                    row.city || '',
+                    row.country
+                ];
+                excelContent += rowData.join('\t') + '\n';
             });
             
-            excelContent += `
-                        </tbody>
-                    </table>
-                </body>
-                </html>`;
+            // Create blob with Excel MIME type and download
+            // Using text/tab-separated-values which Excel handles better
+            const blob = new Blob(['\ufeff' + excelContent], { 
+                type: 'application/vnd.ms-excel;charset=utf-8;' 
+            });
             
-            // Create blob and download as .xls file
-            const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
+            
+            // Use .xls extension for better compatibility
             a.download = `${publisherName.value}_Stockists.xls`;
             a.click();
             window.URL.revokeObjectURL(url);
             
             showSuccess('Excel file exported successfully');
+        }
+        
+        // Export to TXT format
+        function exportToTxt() {
+            if (reportData.length === 0) {
+                showError('No data to export');
+                return;
+            }
+            
+            // Create a copy of the data with expanded country names
+            const exportData = reportData.map(row => ({
+                ...row,
+                country: expandCountryName(row.country)
+            }));
+            
+            // Group data by country for proper sorting
+            const groupedByCountry = exportData.reduce((acc, item) => {
+                if (!acc[item.country]) {
+                    acc[item.country] = [];
+                }
+                acc[item.country].push(item);
+                return acc;
+            }, {});
+            
+            // Sort countries by customer count (descending)
+            const sortedCountries = Object.keys(groupedByCountry).sort((a, b) => {
+                return groupedByCountry[b].length - groupedByCountry[a].length;
+            });
+            
+            // Build formatted text content
+            let txtContent = `STOCKIST REPORT\n`;
+            txtContent += `================\n\n`;
+            txtContent += `Publisher: ${publisherName.value}\n`;
+            txtContent += `Report Generated: ${new Date().toLocaleDateString()}\n`;
+            txtContent += `Date Range: ${startDate.value} to ${endDate.value}\n`;
+            txtContent += `Total Customers: ${exportData.length}\n\n`;
+            txtContent += `=====================================\n\n`;
+            
+            // Add data organized by country
+            sortedCountries.forEach(country => {
+                const countryCustomers = groupedByCountry[country].sort((a, b) => {
+                    // First by city
+                    const cityCompare = (a.city || '').localeCompare(b.city || '');
+                    if (cityCompare !== 0) return cityCompare;
+                    // Then by customer name
+                    return a.customer_name.localeCompare(b.customer_name);
+                });
+                
+                txtContent += `COUNTRY: ${country} (${countryCustomers.length} customers)\n`;
+                txtContent += `-------------------------------------\n`;
+                
+                // Group by city within country
+                const citiesInCountry = [...new Set(countryCustomers.map(c => c.city || 'Unknown'))].sort();
+                
+                citiesInCountry.forEach(city => {
+                    const cityCustomers = countryCustomers.filter(c => (c.city || 'Unknown') === city);
+                    txtContent += `\n  CITY: ${city}\n`;
+                    txtContent += `  ~~~~~~~~~~\n`;
+                    
+                    cityCustomers.forEach(customer => {
+                        txtContent += `    • ${customer.customer_name}\n`;
+                    });
+                });
+                
+                txtContent += `\n=====================================\n\n`;
+            });
+            
+            // Add summary at the end
+            txtContent += `SUMMARY BY COUNTRY\n`;
+            txtContent += `------------------\n`;
+            sortedCountries.forEach(country => {
+                const count = groupedByCountry[country].length;
+                txtContent += `${country}: ${count} customer${count !== 1 ? 's' : ''}\n`;
+            });
+            
+            // Create blob and download
+            const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${publisherName.value}_Stockists.txt`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showSuccess('TXT file exported successfully');
+        }
+        
+        // Alternative: Export to XLSX format (truly Excel-compatible)
+        function exportToXLSX() {
+            if (reportData.length === 0) {
+                showError('No data to export');
+                return;
+            }
+            
+            // Since we can't use external libraries in this context,
+            // we'll keep the CSV export as the most compatible option
+            // and rename the Excel export to be more accurate
+            
+            // Create a copy of the data with expanded country names
+            const exportData = reportData.map(row => ({
+                ...row,
+                country: expandCountryName(row.country)
+            }));
+            
+            // Group data by country for proper sorting
+            const groupedByCountry = exportData.reduce((acc, item) => {
+                if (!acc[item.country]) {
+                    acc[item.country] = [];
+                }
+                acc[item.country].push(item);
+                return acc;
+            }, {});
+            
+            // Sort countries by customer count (descending)
+            const sortedCountries = Object.keys(groupedByCountry).sort((a, b) => {
+                return groupedByCountry[b].length - groupedByCountry[a].length;
+            });
+            
+            // Build final sorted data array
+            const sortedData = [];
+            sortedCountries.forEach(country => {
+                // Sort customers within this country by city, then by name
+                const countryCustomers = groupedByCountry[country].sort((a, b) => {
+                    // First by city
+                    const cityCompare = (a.city || '').localeCompare(b.city || '');
+                    if (cityCompare !== 0) return cityCompare;
+                    // Then by customer name
+                    return a.customer_name.localeCompare(b.customer_name);
+                });
+                
+                // Add all customers from this country to the sorted data
+                sortedData.push(...countryCustomers);
+            });
+            
+            // Create CSV content that Excel can open without warnings
+            const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
+            const csvContent = [
+                headers.join(','),
+                ...sortedData.map(row => [
+                    `"${publisherName.value}"`,
+                    `"${row.customer_name.replace(/"/g, '""')}"`,
+                    `"${row.city || ''}"`,
+                    `"${row.country}"`
+                ].join(','))
+            ].join('\n');
+            
+            // Create blob and download as CSV (most compatible)
+            const blob = new Blob(['\ufeff' + csvContent], { 
+                type: 'text/csv;charset=utf-8;' 
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // Use .csv extension for true compatibility
+            a.download = `${publisherName.value}_Stockists_Excel.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showSuccess('Excel-compatible file exported successfully');
         }
 
         // Print report
