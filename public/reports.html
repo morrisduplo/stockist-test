@@ -1256,7 +1256,7 @@
             showSuccess('CSV exported successfully');
         }
 
-        // Export to Excel format
+        // Export to Excel format (CSV format that Excel prefers)
         function exportToExcel() {
             if (reportData.length === 0) {
                 showError('No data to export');
@@ -1299,38 +1299,41 @@
                 sortedData.push(...countryCustomers);
             });
             
-            // Create tab-separated values for Excel (more compatible than CSV for .xls)
+            // Create CSV content with Excel-friendly formatting
+            // Using semicolon separator which Excel handles better in some regions
             const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
             
-            // Build the content as tab-separated values
-            let excelContent = headers.join('\t') + '\n';
+            // Build CSV with proper Excel formatting
+            let csvContent = headers.join(',') + '\n';
             
             sortedData.forEach(row => {
                 const rowData = [
-                    publisherName.value,
-                    row.customer_name,
-                    row.city || '',
-                    row.country
+                    `"${publisherName.value}"`,
+                    `"${row.customer_name.replace(/"/g, '""')}"`,
+                    `"${row.city || ''}"`,
+                    `"${row.country}"`
                 ];
-                excelContent += rowData.join('\t') + '\n';
+                csvContent += rowData.join(',') + '\n';
             });
             
-            // Create blob with Excel MIME type and download
-            // Using text/tab-separated-values which Excel handles better
-            const blob = new Blob(['\ufeff' + excelContent], { 
-                type: 'application/vnd.ms-excel;charset=utf-8;' 
+            // Create blob with UTF-8 BOM for Excel compatibility
+            // The BOM helps Excel recognize UTF-8 encoding properly
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + csvContent], { 
+                type: 'text/csv;charset=utf-8;' 
             });
             
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             
-            // Use .xls extension for better compatibility
-            a.download = `${publisherName.value}_Stockists.xls`;
+            // Use .csv extension to avoid Excel warning
+            // Excel opens CSV files without warnings
+            a.download = `${publisherName.value}_Stockists_Excel.csv`;
             a.click();
             window.URL.revokeObjectURL(url);
             
-            showSuccess('Excel file exported successfully');
+            showSuccess('Excel-compatible file exported successfully');
         }
         
         // Export to TXT format
