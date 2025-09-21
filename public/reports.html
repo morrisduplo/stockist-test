@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports & Analytics - Antenne Books</title>
+    <!-- Import Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier', monospace;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'EB Garamond', serif;
+            font-weight: 400;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #f1f3f4;
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            color: #333333;
+        }
+
+        .back-link {
+            color: #666;
+            text-decoration: none;
+            padding: 8px 16px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            background: #f1f3f4;
+        }
+
+        .report-form {
+            background: #ecf0f1;
+            padding: 25px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+        .form-section h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            align-items: end;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier', monospace;
+            font-size: 12px;
+            min-width: 150px;
+        }
+
+        .title-selection {
+            display: grid;
+            grid-template-columns: 1fr 100px 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .title-list {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+        }
+
+        .title-item {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .title-item:hover {
+            background: #f0f0f0;
+        }
+
+        .title-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .transfer-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-self: center;
+        }
+
+        .transfer-btn {
+            background: #666;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s;
+        }
+
+        .transfer-btn:hover {
+            background: #333;
+        }
+
+        .selected-titles {
+            background: #e8f5e8;
+        }
+
+        button {
+            background: #000000;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background: #333333;
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+
+        .report-results {
+            margin-top: 30px;
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .report-title {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .report-summary {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .country-section {
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .country-header {
+            background: #34495e;
+            color: white;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .city-section {
+            border-bottom: 1px solid #eee;
+        }
+
+        .city-header {
+            background: #ecf0f1;
+            padding: 12px 15px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .customer-list {
+            padding: 0;
+        }
+
+        .customer-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 12px;
+        }
+
+        .customer-item:last-child {
+            border-bottom: none;
+        }
+
+        .customer-item:hover {
+            background: #f8f9fa;
+        }
+
+        .customer-name {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .customer-details {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .search-filters {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-input {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Reports & Analytics</h1>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+
+        <!-- Error/Success Messages -->
+        <div id="errorMessage" class="error-message" style="display: none;">
+            <strong>Error:</strong> <span id="errorText"></span>
+        </div>
+        <div id="successMessage" class="success-message" style="display: none;">
+            <span id="successText"></span>
+        </div>
+
+        <!-- Report Generation Form -->
+        <div class="report-form">
+            <h2>Generate Customer Report by Titles</h2>
+            
+            <div class="form-section">
+                <h3>Report Settings</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="publisherName">Publisher Name:</label>
+                        <input type="text" id="publisherName" placeholder="Enter publisher name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="startDate">Start Date:</label>
+                        <input type="date" id="startDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="endDate">End Date:</label>
+                        <input type="date" id="endDate" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>Select Titles</h3>
+                <div class="title-selection">
+                    <div>
+                        <h4>Available Titles</h4>
+                        <div class="title-list" id="availableTitles">
+                            <div class="loading">Loading titles...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="transfer-buttons">
+                        <button type="button" class="transfer-btn" id="addTitlesBtn">Add →</button>
+                        <button type="button" class="transfer-btn" id="removeTitlesBtn">← Remove</button>
+                        <button type="button" class="transfer-btn" id="addAllBtn">Add All</button>
+                        <button type="button" class="transfer-btn" id="removeAllBtn">Remove All</button>
+                    </div>
+                    
+                    <div>
+                        <h4>Selected Titles</h4>
+                        <div class="title-list selected-titles" id="selectedTitles">
+                            <div class="no-results">No titles selected</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <button type="button" id="generateReportBtn">Generate Report</button>
+                <button type="button" id="clearFormBtn" class="btn-secondary">Clear Form</button>
+            </div>
+        </div>
+
+        <!-- Report Results -->
+        <div id="reportResults" class="report-results" style="display: none;">
+            <div class="report-header">
+                <div>
+                    <h2 class="report-title" id="reportTitle">Customer Report</h2>
+                    <div class="report-summary" id="reportSummary"></div>
+                </div>
+                <div class="export-buttons">
+                    <button type="button" id="exportCsvBtn" class="btn-secondary">Export CSV</button>
+                    <button type="button" id="exportPrintBtn" class="btn-secondary">Print Report</button>
+                </div>
+            </div>
+
+            <div class="search-filters">
+                <div class="filter-row">
+                    <label>Filter Results:</label>
+                    <input type="text" id="filterCustomer" class="filter-input" placeholder="Search customers...">
+                    <select id="filterCountry" class="filter-input">
+                        <option value="">All Countries</option>
+                    </select>
+                    <select id="filterCity" class="filter-input">
+                        <option value="">All Cities</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="reportContent">
+                <div class="loading">Generating report...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let availableTitlesData = [];
+        let selectedTitlesData = [];
+        let reportData = [];
+
+        // DOM elements
+        const publisherName = document.getElementById('publisherName');
+        const startDate = document.getElementById('startDate');
+        const endDate = document.getElementById('endDate');
+        const availableTitles = document.getElementById('availableTitles');
+        const selectedTitles = document.getElementById('selectedTitles');
+        const addTitlesBtn = document.getElementById('addTitlesBtn');
+        const removeTitlesBtn = document.getElementById('removeTitlesBtn');
+        const addAllBtn = document.getElementById('addAllBtn');
+        const removeAllBtn = document.getElementById('removeAllBtn');
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        const clearFormBtn = document.getElementById('clearFormBtn');
+        const reportResults = document.getElementById('reportResults');
+        const reportTitle = document.getElementById('reportTitle');
+        const reportSummary = document.getElementById('reportSummary');
+        const reportContent = document.getElementById('reportContent');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportPrintBtn = document.getElementById('exportPrintBtn');
+        const filterCustomer = document.getElementById('filterCustomer');
+        const filterCountry = document.getElementById('filterCountry');
+        const filterCity = document.getElementById('filterCity');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const errorText = document.getElementById('errorText');
+        const successText = document.getElementById('successText');
+
+        // Event listeners
+        addTitlesBtn.addEventListener('click', addSelectedTitles);
+        removeTitlesBtn.addEventListener('click', removeSelectedTitles);
+        addAllBtn.addEventListener('click', addAllTitles);
+        removeAllBtn.addEventListener('click', removeAllTitles);
+        generateReportBtn.addEventListener('click', generateReport);
+        clearFormBtn.addEventListener('click', clearForm);
+        exportCsvBtn.addEventListener('click', exportToCsv);
+        exportPrintBtn.addEventListener('click', printReport);
+        filterCustomer.addEventListener('input', filterReportResults);
+        filterCountry.addEventListener('change', filterReportResults);
+        filterCity.addEventListener('change', filterReportResults);
+
+        // Utility functions
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successText.textContent = message;
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+        }
+
+        // Load available titles on page load
+        async function loadAvailableTitles() {
+            try {
+                availableTitles.innerHTML = '<div class="loading">Loading titles...</div>';
+                
+                const response = await fetch('/api/titles');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const titles = await response.json();
+                availableTitlesData = titles.filter(title => !title.excluded); // Exclude titles marked as excluded
+                
+                renderAvailableTitles();
+            } catch (error) {
+                showError('Failed to load titles: ' + error.message);
+                availableTitles.innerHTML = '<div class="no-results">Error loading titles</div>';
+            }
+        }
+
+        // Render available titles
+        function renderAvailableTitles() {
+            if (availableTitlesData.length === 0) {
+                availableTitles.innerHTML = '<div class="no-results">No titles available</div>';
+                return;
+            }
+
+            availableTitles.innerHTML = availableTitlesData.map(title => `
+                <div class="title-item" data-title="${title.title}">
+                    <input type="checkbox" id="available_${title.title}" value="${title.title}">
+                    <label for="available_${title.title}">${title.title}</label>
+                </div>
+            `).join('');
+        }
+
+        // Render selected titles
+        function renderSelectedTitles() {
+            if (selectedTitlesData.length === 0) {
+                selectedTitles.innerHTML = '<div class="no-results">No titles selected</div>';
+                return;
+            }
+
+            selectedTitles.innerHTML = selectedTitlesData.map(title => `
+                <div class="title-item" data-title="${title}">
+                    <input type="checkbox" id="selected_${title}" value="${title}">
+                    <label for="selected_${title}">${title}</label>
+                </div>
+            `).join('');
+        }
+
+        // Add selected titles
+        function addSelectedTitles() {
+            const checkedBoxes = availableTitles.querySelectorAll('input[type="checkbox"]:checked');
+            checkedBoxes.forEach(checkbox => {
+                const title = checkbox.value;
+                if (!selectedTitlesData.includes(title)) {
+                    selectedTitlesData.push(title);
+                }
+            });
+            
+            // Remove added titles from available
+            availableTitlesData = availableTitlesData.filter(title => !selectedTitlesData.includes(title.title));
+            
+            renderAvailableTitles();
+            renderSelectedTitles();
+        }
+
+        // Remove selected titles
+        function removeSelectedTitles() {
+            const checkedBoxes = selectedTitles.querySelectorAll('input[type="checkbox"]:checked');
+            const titlesToRemove = Array.from(checkedBoxes).map(cb => cb.value);
+            
+            // Add back to available titles
+            titlesToRemove.forEach(title => {
+                availableTitlesData.push({ title: title, excluded: false });
+                selectedTitlesData = selectedTitlesData.filter(t => t !== title);
+            });
+            
+            renderAvailableTitles();
+            renderSelectedTitles();
+        }
+
+        // Add all titles
+        function addAllTitles() {
+            selectedTitlesData = [...selectedTitlesData, ...availableTitlesData.map(t => t.title)];
+            availableTitlesData = [];
+            
+            renderAvailableTitles();
+            renderSelectedTitles();
+        }
+
+        // Remove all titles
+        function removeAllTitles() {
+            availableTitlesData = [...availableTitlesData, ...selectedTitlesData.map(t => ({ title: t, excluded: false }))];
+            selectedTitlesData = [];
+            
+            renderAvailableTitles();
+            renderSelectedTitles();
+        }
+
+        // Clear form
+        function clearForm() {
+            publisherName.value = '';
+            startDate.value = '';
+            endDate.value = '';
+            selectedTitlesData = [];
+            reportResults.style.display = 'none';
+            hideMessages();
+            
+            loadAvailableTitles(); // Reload all titles
+        }
+
+        // Generate report
+        async function generateReport() {
+            hideMessages();
+            
+            // Validation
+            if (!publisherName.value.trim()) {
+                showError('Please enter a publisher name');
+                return;
+            }
+            
+            if (!startDate.value || !endDate.value) {
+                showError('Please select both start and end dates');
+                return;
+            }
+            
+            if (selectedTitlesData.length === 0) {
+                showError('Please select at least one title');
+                return;
+            }
+            
+            if (new Date(startDate.value) > new Date(endDate.value)) {
+                showError('Start date must be before end date');
+                return;
+            }
+
+            try {
+                generateReportBtn.disabled = true;
+                generateReportBtn.textContent = 'Generating...';
+                
+                reportResults.style.display = 'block';
+                reportContent.innerHTML = '<div class="loading">Generating report...</div>';
+                
+                const response = await fetch('/api/generate-report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        publisher: publisherName.value.trim(),
+                        startDate: startDate.value,
+                        endDate: endDate.value,
+                        titles: selectedTitlesData
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                reportData = result.data;
+                
+                displayReport(result);
+                showSuccess('Report generated successfully');
+                
+            } catch (error) {
+                showError('Failed to generate report: ' + error.message);
+                reportResults.style.display = 'none';
+            } finally {
+                generateReportBtn.disabled = false;
+                generateReportBtn.textContent = 'Generate Report';
+            }
+        }
+
+        // Display report
+        function displayReport(result) {
+            reportTitle.textContent = `Customer Report - ${publisherName.value}`;
+            reportSummary.textContent = `${result.totalCustomers} customers found for ${selectedTitlesData.length} titles (${startDate.value} to ${endDate.value})`;
+            
+            // Update filter dropdowns
+            updateFilterOptions(result.data);
+            
+            // Render report content
+            renderReportContent(result.data);
+        }
+
+        // Update filter options
+        function updateFilterOptions(data) {
+            const countries = [...new Set(data.map(item => item.country))].sort();
+            const cities = [...new Set(data.map(item => item.city))].sort();
+            
+            filterCountry.innerHTML = '<option value="">All Countries</option>' + 
+                countries.map(country => `<option value="${country}">${country}</option>`).join('');
+            
+            filterCity.innerHTML = '<option value="">All Cities</option>' + 
+                cities.map(city => `<option value="${city}">${city}</option>`).join('');
+        }
+
+        // Render report content
+        function renderReportContent(data) {
+            if (data.length === 0) {
+                reportContent.innerHTML = '<div class="no-results">No customers found for the selected criteria</div>';
+                return;
+            }
+
+            // Group by country, then city, then sort customers alphabetically
+            const grouped = data.reduce((acc, item) => {
+                if (!acc[item.country]) acc[item.country] = {};
+                if (!acc[item.country][item.city]) acc[item.country][item.city] = [];
+                acc[item.country][item.city].push(item);
+                return acc;
+            }, {});
+
+            // Sort countries by customer count (descending)
+            const sortedCountries = Object.keys(grouped).sort((a, b) => {
+                const aCount = Object.values(grouped[a]).flat().length;
+                const bCount = Object.values(grouped[b]).flat().length;
+                return bCount - aCount;
+            });
+
+            let html = '';
+            sortedCountries.forEach(country => {
+                const cities = Object.keys(grouped[country]).sort();
+                const countryCustomerCount = Object.values(grouped[country]).flat().length;
+                
+                html += `
+                    <div class="country-section">
+                        <div class="country-header">${country} (${countryCustomerCount} customers)</div>
+                `;
+                
+                cities.forEach(city => {
+                    const customers = grouped[country][city].sort((a, b) => 
+                        a.customer_name.localeCompare(b.customer_name)
+                    );
+                    
+                    html += `
+                        <div class="city-section">
+                            <div class="city-header">${city} (${customers.length} customers)</div>
+                            <div class="customer-list">
+                    `;
+                    
+                    customers.forEach(customer => {
+                        html += `
+                            <div class="customer-item">
+                                <div>
+                                    <div class="customer-name">${customer.customer_name}</div>
+                                    <div class="customer-details">
+                                        Orders: ${customer.total_orders} | 
+                                        Quantity: ${customer.total_quantity} | 
+                                        Revenue: £${parseFloat(customer.total_revenue).toFixed(2)}
+                                    </div>
+                                </div>
+                                <div class="customer-details">
+                                    Last Order: ${customer.last_order ? new Date(customer.last_order).toLocaleDateString() : 'N/A'}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+            });
+
+            reportContent.innerHTML = html;
+        }
+
+        // Filter report results
+        function filterReportResults() {
+            const customerFilter = filterCustomer.value.toLowerCase();
+            const countryFilter = filterCountry.value;
+            const cityFilter = filterCity.value;
+            
+            let filteredData = reportData.filter(item => {
+                const matchesCustomer = !customerFilter || item.customer_name.toLowerCase().includes(customerFilter);
+                const matchesCountry = !countryFilter || item.country === countryFilter;
+                const matchesCity = !cityFilter || item.city === cityFilter;
+                
+                return matchesCustomer && matchesCountry && matchesCity;
+            });
+            
+            renderReportContent(filteredData);
+        }
+
+        // Export to CSV
+        function exportToCsv() {
+            if (reportData.length === 0) {
+                showError('No data to export');
+                return;
+            }
+            
+            const headers = ['Publisher', 'Country', 'City', 'Customer Name', 'Total Orders', 'Total Quantity', 'Total Revenue', 'Last Order'];
+            const csvContent = [
+                headers.join(','),
+                ...reportData.map(row => [
+                    `"${publisherName.value}"`,
+                    `"${row.country}"`,
+                    `"${row.city}"`,
+                    `"${row.customer_name}"`,
+                    row.total_orders,
+                    row.total_quantity,
+                    parseFloat(row.total_revenue).toFixed(2),
+                    row.last_order ? new Date(row.last_order).toLocaleDateString() : 'N/A'
+                ].join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `customer-report-${publisherName.value}-${startDate.value}-${endDate.value}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Print report
+        function printReport() {
+            window.print();
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAvailableTitles();
+            
+            // Set default date range (last 30 days)
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            
+            endDate.value = today.toISOString().split('T')[0];
+            startDate.value = thirtyDaysAgo.toISOString().split('T')[0];
+        });
+    </script>
+</body>
+</html>
