@@ -74,21 +74,19 @@
 
         .upload-form {
             display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
+            flex-direction: column;
+            gap: 20px;
         }
 
         .file-drop-area {
-            flex: 1;
-            padding: 20px;
+            padding: 30px;
             border: 2px dashed #bdc3c7;
             border-radius: 5px;
             background: white;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            min-height: 80px;
+            min-height: 120px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -115,6 +113,102 @@
             margin-top: 5px;
         }
 
+        .file-count {
+            font-size: 18px;
+            font-weight: bold;
+            color: #28a745;
+            margin-top: 10px;
+        }
+
+        /* File list styles */
+        .file-list {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 5px;
+            padding: 10px;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 12px;
+        }
+
+        .file-item:hover {
+            background: #f1f3f4;
+        }
+
+        .file-name {
+            flex: 1;
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-size {
+            color: #666;
+            margin-left: 10px;
+            font-size: 11px;
+        }
+
+        .file-status {
+            margin-left: 10px;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .status-processing {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .status-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-error {
+            background: #dc3545;
+            color: white;
+        }
+
+        .remove-file {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            margin-left: 10px;
+        }
+
+        .remove-file:hover {
+            background: #c82333;
+        }
+
+        .upload-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
         button {
             background: #000000;
             color: white;
@@ -133,6 +227,14 @@
         button:disabled {
             background: #bdc3c7;
             cursor: not-allowed;
+        }
+
+        .btn-clear {
+            background: #6c757d;
+        }
+
+        .btn-clear:hover {
+            background: #5a6268;
         }
 
         .btn-edit {
@@ -166,15 +268,51 @@
         }
 
         .status.success {
-            background: #f1f3f4;
-            color: #333333;
-            border: 1px solid #666666;
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
         }
 
         .status.error {
-            background: #f1f1f1;
-            color: #333333;
-            border: 1px solid #666666;
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        /* Upload progress */
+        .upload-progress {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .progress-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background: #ddd;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #28a745;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
         }
 
         .records-section {
@@ -431,11 +569,26 @@
             <h2>Upload Sales Data</h2>
             <form id="uploadForm" class="upload-form">
                 <div class="file-drop-area" id="fileDropArea">
-                    <div>📁 Drop Excel or CSV file here or click to browse</div>
-                    <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
-                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" required>
+                    <div>📁 Drop Excel or CSV files here or click to browse</div>
+                    <div class="file-drop-text">Supports multiple files: .xlsx, .xls and .csv</div>
+                    <div class="file-count" id="fileCount" style="display: none;"></div>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple>
                 </div>
-                <button type="submit" id="uploadBtn">Upload & Process</button>
+                
+                <div id="fileList" class="file-list" style="display: none;"></div>
+                
+                <div class="upload-controls">
+                    <button type="submit" id="uploadBtn">Upload & Process All Files</button>
+                    <button type="button" id="clearBtn" class="btn-clear" style="display: none;">Clear All Files</button>
+                </div>
+                
+                <div id="uploadProgress" class="upload-progress">
+                    <div class="progress-title">Processing Files...</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Processing file 0 of 0...</div>
+                </div>
             </form>
             <div id="status" class="status"></div>
         </div>
@@ -560,8 +713,14 @@
         const uploadForm = document.getElementById('uploadForm');
         const fileInput = document.getElementById('fileInput');
         const uploadBtn = document.getElementById('uploadBtn');
+        const clearBtn = document.getElementById('clearBtn');
         const status = document.getElementById('status');
         const fileDropArea = document.getElementById('fileDropArea');
+        const fileCount = document.getElementById('fileCount');
+        const fileList = document.getElementById('fileList');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
         const recordsContainer = document.getElementById('recordsContainer');
         const refreshBtn = document.getElementById('refreshBtn');
         const recordCount = document.getElementById('recordCount');
@@ -593,6 +752,7 @@
         let currentPage = 1;
         let totalPages = 1;
         let totalRecords = 0;
+        let selectedFiles = [];
 
         // Pagination event listeners
         firstPageBtn.addEventListener('click', () => goToPage(1));
@@ -658,83 +818,225 @@
             fileDropArea.classList.remove('dragover');
             
             const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const file = files[0];
+            handleFileSelection(files);
+        });
+
+        // File input change handler
+        fileInput.addEventListener('change', (e) => {
+            handleFileSelection(e.target.files);
+        });
+
+        // Clear button handler
+        clearBtn.addEventListener('click', () => {
+            clearFileSelection();
+        });
+
+        // Handle file selection
+        function handleFileSelection(files) {
+            selectedFiles = [];
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
                 if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
-                    fileInput.files = files;
-                    updateDropAreaText(file.name);
-                } else {
-                    showStatus('Please select an Excel or CSV file (.xlsx, .xls, .csv)', 'error');
+                    selectedFiles.push({
+                        file: file,
+                        status: 'pending',
+                        message: ''
+                    });
                 }
             }
-        });
-
-        // Update file input change handler
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                updateDropAreaText(e.target.files[0].name);
+            
+            if (selectedFiles.length === 0) {
+                showStatus('Please select valid Excel or CSV files (.xlsx, .xls, .csv)', 'error');
+                return;
             }
-        });
+            
+            updateFileDisplay();
+        }
 
-        // Function to update drop area text
-        function updateDropAreaText(filename) {
-            fileDropArea.innerHTML = `
-                <div>📄 ${filename}</div>
-                <div class="file-drop-text">Click to change file</div>
-            `;
+        // Clear file selection
+        function clearFileSelection() {
+            selectedFiles = [];
+            fileInput.value = '';
+            updateFileDisplay();
+            uploadProgress.style.display = 'none';
+        }
+
+        // Update file display
+        function updateFileDisplay() {
+            if (selectedFiles.length === 0) {
+                fileCount.style.display = 'none';
+                fileList.style.display = 'none';
+                clearBtn.style.display = 'none';
+                fileDropArea.innerHTML = `
+                    <div>📁 Drop Excel or CSV files here or click to browse</div>
+                    <div class="file-drop-text">Supports multiple files: .xlsx, .xls and .csv</div>
+                    <div class="file-count" id="fileCount" style="display: none;"></div>
+                `;
+                
+                // Re-add the input element
+                const newInput = document.createElement('input');
+                newInput.type = 'file';
+                newInput.id = 'fileInput';
+                newInput.accept = '.xlsx,.xls,.csv';
+                newInput.multiple = true;
+                newInput.style.display = 'none';
+                newInput.addEventListener('change', (e) => handleFileSelection(e.target.files));
+                fileDropArea.appendChild(newInput);
+                fileInput = newInput;
+            } else {
+                fileCount.textContent = `${selectedFiles.length} file(s) selected`;
+                fileCount.style.display = 'block';
+                clearBtn.style.display = 'block';
+                
+                // Update file list
+                fileList.innerHTML = '';
+                selectedFiles.forEach((fileInfo, index) => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    
+                    const fileName = document.createElement('div');
+                    fileName.className = 'file-name';
+                    fileName.textContent = fileInfo.file.name;
+                    
+                    const fileSize = document.createElement('span');
+                    fileSize.className = 'file-size';
+                    fileSize.textContent = formatFileSize(fileInfo.file.size);
+                    
+                    const fileStatus = document.createElement('span');
+                    fileStatus.className = `file-status status-${fileInfo.status}`;
+                    fileStatus.textContent = fileInfo.status;
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'remove-file';
+                    removeBtn.textContent = '×';
+                    removeBtn.onclick = () => removeFile(index);
+                    
+                    fileItem.appendChild(fileName);
+                    fileItem.appendChild(fileSize);
+                    fileItem.appendChild(fileStatus);
+                    if (fileInfo.status === 'pending') {
+                        fileItem.appendChild(removeBtn);
+                    }
+                    
+                    fileList.appendChild(fileItem);
+                });
+                
+                fileList.style.display = 'block';
+            }
+        }
+
+        // Remove individual file
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileDisplay();
+        }
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
         // Upload form handler
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const file = fileInput.files[0];
-            if (!file) {
-                showStatus('Please select a file', 'error');
+            if (selectedFiles.length === 0) {
+                showStatus('Please select files to upload', 'error');
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('excelFile', file);
-            
-            // Auto-detect data type based on file name or content
-            let dataType = 'gazelle'; // default
-            if (file.name.toLowerCase().includes('shopify') || file.name.toLowerCase().endsWith('.csv')) {
-                dataType = 'shopify';
-            }
-            formData.append('dataType', dataType);
-
             uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Processing...';
-            showStatus('Uploading and processing file...', 'success');
+            clearBtn.disabled = true;
+            uploadProgress.style.display = 'block';
+            status.style.display = 'none';
+            
+            let successCount = 0;
+            let errorCount = 0;
+            let totalRecordsImported = 0;
+            let totalDuplicatesSkipped = 0;
 
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    showStatus(result.message, 'success');
-                    fileInput.value = ''; // Clear file input
-                    // Reset drop area text
-                    fileDropArea.innerHTML = `
-                        <div>📁 Drop Excel or CSV file here or click to browse</div>
-                        <div class="file-drop-text">Supports .xlsx, .xls and .csv files</div>
-                    `;
-                    loadUploadLog(); // Refresh the upload log
-                    currentPage = 1; // Reset to first page
-                    loadRecords(); // Refresh the records table
-                } else {
-                    showStatus(result.error || 'Upload failed', 'error');
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const fileInfo = selectedFiles[i];
+                
+                // Update progress
+                progressBar.style.width = `${((i + 1) / selectedFiles.length) * 100}%`;
+                progressText.textContent = `Processing file ${i + 1} of ${selectedFiles.length}: ${fileInfo.file.name}`;
+                
+                // Update file status
+                fileInfo.status = 'processing';
+                updateFileDisplay();
+                
+                const formData = new FormData();
+                formData.append('excelFile', fileInfo.file);
+                
+                // Auto-detect data type based on file name
+                let dataType = 'gazelle'; // default
+                if (fileInfo.file.name.toLowerCase().includes('shopify') || fileInfo.file.name.toLowerCase().endsWith('.csv')) {
+                    dataType = 'shopify';
                 }
-            } catch (error) {
-                showStatus('Network error: ' + error.message, 'error');
-            } finally {
-                uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload & Process';
+                formData.append('dataType', dataType);
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        fileInfo.status = 'success';
+                        fileInfo.message = result.message;
+                        successCount++;
+                        totalRecordsImported += result.inserted || 0;
+                        totalDuplicatesSkipped += result.skipped || 0;
+                    } else {
+                        fileInfo.status = 'error';
+                        fileInfo.message = result.error || 'Upload failed';
+                        errorCount++;
+                    }
+                } catch (error) {
+                    fileInfo.status = 'error';
+                    fileInfo.message = 'Network error: ' + error.message;
+                    errorCount++;
+                }
+                
+                updateFileDisplay();
+            }
+            
+            // Show final status
+            progressBar.style.width = '100%';
+            progressText.textContent = 'Processing complete!';
+            
+            let statusMessage = `Processed ${selectedFiles.length} file(s): ${successCount} successful`;
+            if (errorCount > 0) {
+                statusMessage += `, ${errorCount} failed`;
+            }
+            statusMessage += `. Total: ${totalRecordsImported} records imported`;
+            if (totalDuplicatesSkipped > 0) {
+                statusMessage += `, ${totalDuplicatesSkipped} duplicates skipped`;
+            }
+            
+            showStatus(statusMessage, errorCount === 0 ? 'success' : (successCount > 0 ? 'success' : 'error'));
+            
+            uploadBtn.disabled = false;
+            clearBtn.disabled = false;
+            
+            // Refresh data after all uploads
+            loadUploadLog();
+            currentPage = 1;
+            loadRecords();
+            
+            // Auto-clear after successful upload
+            if (errorCount === 0) {
+                setTimeout(() => {
+                    clearFileSelection();
+                }, 3000);
             }
         });
 
@@ -766,8 +1068,8 @@
                     if (response.ok) {
                         showStatus(result.message, 'success');
                         currentPage = 1;
-                        loadRecords(); // Refresh the table
-                        loadUploadLog(); // Refresh upload log
+                        loadRecords();
+                        loadUploadLog();
                     } else {
                         showStatus(result.error, 'error');
                     }
@@ -926,7 +1228,7 @@
         function displayRecords() {
             if (filteredRecords.length === 0) {
                 if (allRecords.length === 0) {
-                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload an Excel file to get started!</div>';
+                    recordsContainer.innerHTML = '<div class="no-records">No records found. Upload Excel or CSV files to get started!</div>';
                 } else {
                     recordsContainer.innerHTML = '<div class="no-records">No records match your filters.</div>';
                 }
