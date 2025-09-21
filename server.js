@@ -37,10 +37,10 @@ const upload = multer({
   }
 });
 
-// Initialize database tables
+// Initialize database tables with enhanced tracking
 async function initDatabase() {
   try {
-    // Create records table with additional fields for duplicate detection
+    // Create records table with source tracking fields
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -55,30 +55,32 @@ async function initDatabase() {
         city VARCHAR(100),
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         order_reference VARCHAR(100),
-        line_identifier TEXT
+        line_identifier TEXT,
+        source_file VARCHAR(255),
+        source_row INTEGER,
+        upload_batch_id INTEGER,
+        data_type VARCHAR(20)
       )
     `);
     
     // Add new columns if they don't exist (for existing databases)
-    try {
-      await pool.query('ALTER TABLE records ADD COLUMN city VARCHAR(100)');
-      console.log('Added city column to records table');
-    } catch (err) {
-      console.log('City column already exists or error adding it:', err.message);
-    }
+    const newColumns = [
+      { name: 'city', type: 'VARCHAR(100)' },
+      { name: 'order_reference', type: 'VARCHAR(100)' },
+      { name: 'line_identifier', type: 'TEXT' },
+      { name: 'source_file', type: 'VARCHAR(255)' },
+      { name: 'source_row', type: 'INTEGER' },
+      { name: 'upload_batch_id', type: 'INTEGER' },
+      { name: 'data_type', type: 'VARCHAR(20)' }
+    ];
     
-    try {
-      await pool.query('ALTER TABLE records ADD COLUMN order_reference VARCHAR(100)');
-      console.log('Added order_reference column to records table');
-    } catch (err) {
-      console.log('Order_reference column already exists or error adding it:', err.message);
-    }
-    
-    try {
-      await pool.query('ALTER TABLE records ADD COLUMN line_identifier TEXT');
-      console.log('Added line_identifier column to records table');
-    } catch (err) {
-      console.log('Line_identifier column already exists or error adding it:', err.message);
+    for (const col of newColumns) {
+      try {
+        await pool.query(`ALTER TABLE records ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`Added ${col.name} column to records table`);
+      } catch (err) {
+        // Column already exists, that's fine
+      }
     }
     
     // Create unique index for duplicate prevention
@@ -89,18 +91,30 @@ async function initDatabase() {
       `);
       console.log('Created unique index for duplicate prevention');
     } catch (err) {
-      console.log('Unique index already exists or error creating it:', err.message);
+      // Index already exists
     }
     
-    // Create upload_log table
+    // Enhanced upload_log table with more details
     await pool.query(`
       CREATE TABLE IF NOT EXISTS upload_log (
         id SERIAL PRIMARY KEY,
         filename VARCHAR(255),
         records_count INTEGER,
-        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        data_type VARCHAR(20),
+        unknown_customers INTEGER DEFAULT 0,
+        duplicates_skipped INTEGER DEFAULT 0
       )
     `);
+    
+    // Add new columns to upload_log if they don't exist
+    try {
+      await pool.query('ALTER TABLE upload_log ADD COLUMN data_type VARCHAR(20)');
+      await pool.query('ALTER TABLE upload_log ADD COLUMN unknown_customers INTEGER DEFAULT 0');
+      await pool.query('ALTER TABLE upload_log ADD COLUMN duplicates_skipped INTEGER DEFAULT 0');
+    } catch (err) {
+      // Columns may already exist
+    }
     
     // Create customer_exclusions table
     await pool.query(`
@@ -112,7 +126,7 @@ async function initDatabase() {
       )
     `);
     
-    console.log('Database initialized successfully');
+    console.log('Database initialized successfully with enhanced tracking');
   } catch (error) {
     console.error('Database initialization error:', error);
   }
@@ -152,12 +166,13 @@ function parseCSVLine(line) {
 }
 
 // Function to clean customer names with special character handling
-function cleanCustomerName(rawName) {
+function cleanCustomerName(rawName, rowNumber, filename) {
   if (!rawName || typeof rawName !== 'string') {
+    console.log(`Row ${rowNumber} in ${filename}: No customer name provided`);
     return null;
   }
   
-  console.log(`Cleaning customer name: "${rawName}"`);
+  console.log(`Cleaning customer name from row ${rowNumber}: "${rawName}"`);
   
   // Remove leading/trailing whitespace
   let cleaned = rawName.trim();
@@ -206,37 +221,37 @@ function cleanCustomerName(rawName) {
   
   // Log what we're doing
   if (cleaned !== rawName.trim()) {
-    console.log(`Cleaned name: "${rawName}" -> "${cleaned}"`);
+    console.log(`Row ${rowNumber}: Cleaned name: "${rawName}" -> "${cleaned}"`);
   }
   
   // Validation checks
   
   // Return null if the cleaned name is empty or too short
   if (cleaned.length < 2) {
-    console.log(`Rejected - too short: "${rawName}" -> "${cleaned}"`);
+    console.log(`Row ${rowNumber}: Rejected - too short: "${rawName}" -> "${cleaned}"`);
     return null;
   }
   
   // Return null if it looks like an address (starts with numbers)
   if (/^\d+\s/.test(cleaned)) {
-    console.log(`Rejected - looks like address: "${rawName}" -> "${cleaned}"`);
+    console.log(`Row ${rowNumber}: Rejected - looks like address: "${rawName}" -> "${cleaned}"`);
     return null;
   }
   
   // Return null if it's only special characters or numbers
   if (!/[a-zA-Z]/.test(cleaned)) {
-    console.log(`Rejected - no letters: "${rawName}" -> "${cleaned}"`);
+    console.log(`Row ${rowNumber}: Rejected - no letters: "${rawName}" -> "${cleaned}"`);
     return null;
   }
   
   // Return null if it's too generic
   const genericNames = ['customer', 'guest', 'user', 'test', 'admin', 'default'];
   if (genericNames.includes(cleaned.toLowerCase())) {
-    console.log(`Rejected - generic name: "${rawName}" -> "${cleaned}"`);
+    console.log(`Row ${rowNumber}: Rejected - generic name: "${rawName}" -> "${cleaned}"`);
     return null;
   }
   
-  console.log(`Accepted customer name: "${cleaned}"`);
+  console.log(`Row ${rowNumber}: Accepted customer name: "${cleaned}"`);
   return cleaned;
 }
 
@@ -266,9 +281,10 @@ async function recordExists(orderRef, title, ean, quantity, total) {
   }
 }
 
-// Process Shopify data (CSV format) with duplicate prevention
-function processShopifyData(rawData) {
+// Process Shopify data (CSV format) with source tracking
+function processShopifyData(rawData, filename, uploadBatchId) {
   console.log('=== DEBUGGING CSV PROCESSING ===');
+  console.log('File:', filename);
   console.log('Raw data length:', rawData.length);
   
   // Print all available columns
@@ -279,9 +295,10 @@ function processShopifyData(rawData) {
   const orderGroups = new Map();
   
   rawData.forEach((row, index) => {
+    const rowNumber = index + 2; // Excel rows start at 1, plus header row
     const orderNumber = row['Name']; // This is the unique order identifier (Column A)
     if (!orderNumber) {
-      console.log(`Row ${index + 1}: No order number, skipping`);
+      console.log(`Row ${rowNumber}: No order number, skipping`);
       return;
     }
     
@@ -292,7 +309,8 @@ function processShopifyData(rawData) {
           name: null,
           company: null,
           country: null,
-          city: null
+          city: null,
+          sourceRow: rowNumber
         },
         lineItems: []
       });
@@ -304,24 +322,24 @@ function processShopifyData(rawData) {
     if (!order.customerInfo.name && !order.customerInfo.company) {
       // Check for company fields first (better for B2B)
       if (row['Billing Company'] && row['Billing Company'].trim()) {
-        const cleanCompany = cleanCustomerName(row['Billing Company'].trim());
+        const cleanCompany = cleanCustomerName(row['Billing Company'].trim(), rowNumber, filename);
         if (cleanCompany) {
           order.customerInfo.company = cleanCompany;
           order.customerInfo.name = cleanCompany;
         }
       } else if (row['Shipping Company'] && row['Shipping Company'].trim()) {
-        const cleanCompany = cleanCustomerName(row['Shipping Company'].trim());
+        const cleanCompany = cleanCustomerName(row['Shipping Company'].trim(), rowNumber, filename);
         if (cleanCompany) {
           order.customerInfo.company = cleanCompany;
           order.customerInfo.name = cleanCompany;
         }
       } else if (row['Billing Name'] && row['Billing Name'].trim()) {
-        const cleanName = cleanCustomerName(row['Billing Name'].trim());
+        const cleanName = cleanCustomerName(row['Billing Name'].trim(), rowNumber, filename);
         if (cleanName) {
           order.customerInfo.name = cleanName;
         }
       } else if (row['Shipping Name'] && row['Shipping Name'].trim()) {
-        const cleanName = cleanCustomerName(row['Shipping Name'].trim());
+        const cleanName = cleanCustomerName(row['Shipping Name'].trim(), rowNumber, filename);
         if (cleanName) {
           order.customerInfo.name = cleanName;
         }
@@ -348,15 +366,22 @@ function processShopifyData(rawData) {
     
     // Add line item if it has product information
     if (row['Lineitem name'] && row['Lineitem quantity']) {
+      row._sourceRow = rowNumber;
       order.lineItems.push(row);
     }
   });
   
-  // Step 2: Create records for each line item
+  // Step 2: Create records for each line item with source tracking
   const processedRecords = [];
+  let unknownCustomerCount = 0;
   
   orderGroups.forEach((order, orderNumber) => {
     const customerName = order.customerInfo.name || order.customerInfo.company || 'Unknown Customer';
+    if (customerName === 'Unknown Customer') {
+      unknownCustomerCount++;
+      console.log(`Order ${orderNumber} from row ${order.customerInfo.sourceRow}: Creating Unknown Customer record`);
+    }
+    
     const country = order.customerInfo.country || 'Unknown';
     const city = order.customerInfo.city || 'Unknown';
     
@@ -378,7 +403,11 @@ function processShopifyData(rawData) {
         country: country,
         city: city,
         order_reference: orderNumber, // Store the unique order reference (Name column)
-        line_identifier: createLineIdentifier(orderNumber, title, ean, quantity, totalPrice)
+        line_identifier: createLineIdentifier(orderNumber, title, ean, quantity, totalPrice),
+        source_file: filename,
+        source_row: item._sourceRow,
+        upload_batch_id: uploadBatchId,
+        data_type: 'shopify'
       };
       
       processedRecords.push(record);
@@ -386,23 +415,35 @@ function processShopifyData(rawData) {
   });
   
   console.log(`Created ${processedRecords.length} processed Shopify records`);
-  return processedRecords;
+  console.log(`Found ${unknownCustomerCount} orders with Unknown Customer`);
+  return { records: processedRecords, unknownCount: unknownCustomerCount };
 }
 
-// Process Gazelle data (Excel format) with Unknown defaults and duplicate prevention
-function processGazelleData(rawData) {
+// Process Gazelle data (Excel format) with source tracking
+function processGazelleData(rawData, filename, uploadBatchId) {
   console.log('=== PROCESSING GAZELLE DATA ===');
+  console.log('File:', filename);
   console.log('Raw data length:', rawData.length);
   
   const processedRecords = [];
+  let unknownCustomerCount = 0;
   
   rawData.forEach((row, index) => {
+    const rowNumber = index + 2; // Excel rows start at 1, plus header row
+    
     try {
       // Skip empty rows
       if (!row || Object.keys(row).length === 0) return;
       
       // Gazelle format processing with duplicate prevention
       const keys = Object.keys(row);
+      
+      // Check if customer name (Column D, index 3) is missing
+      const customerName = row[keys[3]];
+      if (!customerName || customerName.trim() === '') {
+        unknownCustomerCount++;
+        console.log(`Row ${rowNumber}: No customer name in column D, defaulting to Unknown`);
+      }
       
       // Column E contains the Invoice number (unique order reference)
       const invoiceNumber = row[keys[4]] || `INV_${index}_${Date.now()}`; // Column E (index 4)
@@ -414,25 +455,30 @@ function processGazelleData(rawData) {
       const record = {
         order_date: parseDate(row[keys[0]] || new Date()),
         cus_no: row[keys[2]] || null,
-        customer_name: row[keys[3]] || 'Unknown',
+        customer_name: customerName || 'Unknown',
         title: title,
         book_ean: ean,
         quantity: quantity,
         total: total,
-        country: 'Unknown', // Changed from 'UK' to 'Unknown'
-        city: 'Unknown', // Changed from 'London' to 'Unknown'
-        order_reference: invoiceNumber, // Store the invoice number as order reference
-        line_identifier: createLineIdentifier(invoiceNumber, title, ean, quantity, total)
+        country: 'Unknown',
+        city: 'Unknown',
+        order_reference: invoiceNumber,
+        line_identifier: createLineIdentifier(invoiceNumber, title, ean, quantity, total),
+        source_file: filename,
+        source_row: rowNumber,
+        upload_batch_id: uploadBatchId,
+        data_type: 'gazelle'
       };
       
       processedRecords.push(record);
     } catch (error) {
-      console.error(`Error processing Gazelle row ${index + 1}:`, error);
+      console.error(`Error processing Gazelle row ${rowNumber}:`, error);
     }
   });
   
   console.log(`Created ${processedRecords.length} Gazelle records`);
-  return processedRecords;
+  console.log(`Found ${unknownCustomerCount} rows with Unknown Customer`);
+  return { records: processedRecords, unknownCount: unknownCustomerCount };
 }
 
 // Routes
@@ -455,6 +501,153 @@ app.get('/customers', (req, res) => {
 // Serve the reports page
 app.get('/reports', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+});
+
+// NEW: API endpoint to search for Unknown customer sources
+app.get('/api/unknown-sources', async (req, res) => {
+  try {
+    console.log('Fetching Unknown customer sources');
+    
+    const result = await pool.query(`
+      SELECT 
+        customer_name,
+        source_file,
+        source_row,
+        data_type,
+        COUNT(*) as record_count,
+        MIN(order_date) as first_order,
+        MAX(order_date) as last_order,
+        SUM(total) as total_revenue,
+        STRING_AGG(DISTINCT title, ', ' ORDER BY title) as sample_products
+      FROM records
+      WHERE customer_name = 'Unknown' 
+         OR customer_name = 'Unknown Customer'
+         OR customer_name IS NULL
+      GROUP BY customer_name, source_file, source_row, data_type
+      ORDER BY record_count DESC
+    `);
+    
+    console.log(`Found ${result.rows.length} Unknown customer source groups`);
+    res.json(result.rows);
+    
+  } catch (error) {
+    console.error('Unknown sources API error:', error);
+    res.status(500).json({ error: 'Failed to fetch unknown sources: ' + error.message });
+  }
+});
+
+// NEW: API endpoint to get detailed records for editing
+app.get('/api/records/unknown', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id,
+        order_date,
+        customer_name,
+        title,
+        book_ean,
+        quantity,
+        total,
+        country,
+        city,
+        source_file,
+        source_row,
+        data_type,
+        order_reference
+      FROM records
+      WHERE customer_name = 'Unknown' 
+         OR customer_name = 'Unknown Customer'
+         OR customer_name IS NULL
+      ORDER BY source_file, source_row
+      LIMIT 100
+    `);
+    
+    res.json(result.rows);
+    
+  } catch (error) {
+    console.error('Fetch unknown records error:', error);
+    res.status(500).json({ error: 'Failed to fetch unknown records: ' + error.message });
+  }
+});
+
+// ENHANCED: API endpoint to update individual record with better validation
+app.post('/api/update-record', async (req, res) => {
+  try {
+    const { id, customer_name, country, city, title } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Record ID is required' });
+    }
+    
+    if (!customer_name || customer_name.trim() === '') {
+      return res.status(400).json({ error: 'Customer name is required' });
+    }
+    
+    console.log(`Updating record ${id}: customer="${customer_name}", country="${country}", city="${city}", title="${title}"`);
+    
+    // Get original record details for logging
+    const originalRecord = await pool.query('SELECT * FROM records WHERE id = $1', [id]);
+    
+    if (originalRecord.rows.length === 0) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    
+    const original = originalRecord.rows[0];
+    console.log(`Original: customer="${original.customer_name}", source_file="${original.source_file}", row=${original.source_row}`);
+    
+    // Update the record
+    const result = await pool.query(`
+      UPDATE records 
+      SET customer_name = $1, 
+          country = $2, 
+          city = $3, 
+          title = $4, 
+          upload_date = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING *
+    `, [customer_name.trim(), country || 'Unknown', city || 'Unknown', title ? title.trim() : original.title, id]);
+    
+    console.log(`Successfully updated record ${id} (originally from ${original.source_file} row ${original.source_row})`);
+    res.json({ success: true, record: result.rows[0], original: original });
+    
+  } catch (error) {
+    console.error('Update record error:', error);
+    res.status(500).json({ error: 'Failed to update record: ' + error.message });
+  }
+});
+
+// NEW: API endpoint to bulk update Unknown customers
+app.post('/api/bulk-update-unknown', async (req, res) => {
+  try {
+    const { customer_name, source_file, source_row } = req.body;
+    
+    if (!customer_name || customer_name.trim() === '') {
+      return res.status(400).json({ error: 'Customer name is required' });
+    }
+    
+    console.log(`Bulk updating Unknown customers from ${source_file} row ${source_row}`);
+    
+    // Update all matching records
+    const result = await pool.query(`
+      UPDATE records 
+      SET customer_name = $1
+      WHERE source_file = $2 
+      AND source_row = $3
+      AND (customer_name = 'Unknown' OR customer_name = 'Unknown Customer' OR customer_name IS NULL)
+      RETURNING id
+    `, [customer_name.trim(), source_file, source_row]);
+    
+    console.log(`Updated ${result.rowCount} records`);
+    res.json({ 
+      success: true, 
+      updated: result.rowCount,
+      message: `Updated ${result.rowCount} records from ${source_file} row ${source_row}` 
+    });
+    
+  } catch (error) {
+    console.error('Bulk update unknown error:', error);
+    res.status(500).json({ error: 'Failed to bulk update: ' + error.message });
+  }
 });
 
 // API endpoint to get available titles for reports (excluding excluded customers)
@@ -720,42 +913,6 @@ app.post('/api/customers/exclude', async (req, res) => {
   }
 });
 
-// API endpoint to update individual records
-app.post('/api/update-record', async (req, res) => {
-  try {
-    const { id, customer_name, country, city, title } = req.body;
-    
-    if (!id) {
-      return res.status(400).json({ error: 'Record ID is required' });
-    }
-    
-    if (!customer_name || customer_name.trim() === '') {
-      return res.status(400).json({ error: 'Customer name is required' });
-    }
-    
-    console.log(`Updating record ${id}: customer="${customer_name}", country="${country}", city="${city}", title="${title}"`);
-    
-    // Update the record - use 'Unknown' as default for city
-    const result = await pool.query(`
-      UPDATE records 
-      SET customer_name = $1, country = $2, city = $3, title = $4, upload_date = CURRENT_TIMESTAMP
-      WHERE id = $5
-      RETURNING *
-    `, [customer_name.trim(), country, city || 'Unknown', title.trim(), id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Record not found' });
-    }
-    
-    console.log(`Successfully updated record ${id}`);
-    res.json({ success: true, record: result.rows[0] });
-    
-  } catch (error) {
-    console.error('Update record error:', error);
-    res.status(500).json({ error: 'Failed to update record: ' + error.message });
-  }
-});
-
 // Clear all data endpoint
 app.post('/clear-data', async (req, res) => {
   try {
@@ -786,22 +943,30 @@ app.post('/clear-data', async (req, res) => {
   }
 });
 
-// Upload and process Excel/CSV file with duplicate prevention
+// Upload and process Excel/CSV file with enhanced tracking
 app.post('/upload', upload.single('excelFile'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const isCSV = req.file.originalname.toLowerCase().endsWith('.csv');
+    const filename = req.file.originalname;
+    const isCSV = filename.toLowerCase().endsWith('.csv');
     
     // Auto-detect data type based on file type and name
     let dataType;
-    if (isCSV || req.file.originalname.toLowerCase().includes('shopify')) {
+    if (isCSV || filename.toLowerCase().includes('shopify')) {
       dataType = 'shopify';
     } else {
       dataType = 'gazelle'; // Excel files are typically Gazelle format
     }
+    
+    // Create upload batch ID
+    const uploadBatchResult = await pool.query(
+      'INSERT INTO upload_log (filename, records_count, data_type, unknown_customers, duplicates_skipped) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [filename, 0, dataType, 0, 0]
+    );
+    const uploadBatchId = uploadBatchResult.rows[0].id;
     
     let rawData;
     
@@ -838,17 +1003,21 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
     }
     
     console.log(`Processing ${dataType} data format (${isCSV ? 'CSV' : 'Excel'})`);
+    console.log('File:', filename);
     console.log('Raw data length:', rawData.length);
     console.log('Column headers:', Object.keys(rawData[0] || {}));
     console.log('Sample row:', rawData[0]);
     
-    // Process data based on detected type
-    let processedRecords;
+    // Process data based on detected type with source tracking
+    let processedData;
     if (dataType === 'shopify') {
-      processedRecords = processShopifyData(rawData);
+      processedData = processShopifyData(rawData, filename, uploadBatchId);
     } else {
-      processedRecords = processGazelleData(rawData);
+      processedData = processGazelleData(rawData, filename, uploadBatchId);
     }
+    
+    const processedRecords = processedData.records;
+    const unknownCustomerCount = processedData.unknownCount;
     
     // Insert into database with duplicate checking
     const insertedRecords = [];
@@ -866,21 +1035,31 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
         );
         
         if (exists) {
-          console.log(`Skipping duplicate record: Order ${record.order_reference}, Product: ${record.title}`);
+          console.log(`Skipping duplicate: Order ${record.order_reference}, Row ${record.source_row}`);
           skippedRecords.push(record);
           continue;
         }
         
-        // Insert the record
+        // Insert the record with source tracking
         const result = await pool.query(
-          'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
-          [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country, record.city, record.order_reference, record.line_identifier]
+          `INSERT INTO records (
+            order_date, cus_no, customer_name, title, book_ean, quantity, total, 
+            country, city, order_reference, line_identifier,
+            source_file, source_row, upload_batch_id, data_type
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
+          RETURNING *`,
+          [
+            record.order_date, record.cus_no, record.customer_name, record.title, 
+            record.book_ean, record.quantity, record.total, record.country, record.city, 
+            record.order_reference, record.line_identifier,
+            record.source_file, record.source_row, record.upload_batch_id, record.data_type
+          ]
         );
         
         insertedRecords.push(result.rows[0]);
       } catch (dbError) {
         if (dbError.code === '23505') { // Unique constraint violation
-          console.log(`Duplicate record detected and skipped: ${record.order_reference}`);
+          console.log(`Duplicate detected: Row ${record.source_row}`);
           skippedRecords.push(record);
         } else {
           console.error('Database insert error for record:', record, dbError);
@@ -888,13 +1067,16 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       }
     }
 
-    // Log the file upload
+    // Update upload log with final counts
     await pool.query(
-      'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
-      [`${dataType.toUpperCase()}: ${req.file.originalname}`, insertedRecords.length]
+      'UPDATE upload_log SET records_count = $1, unknown_customers = $2, duplicates_skipped = $3 WHERE id = $4',
+      [insertedRecords.length, unknownCustomerCount, skippedRecords.length, uploadBatchId]
     );
 
     let message = `Successfully processed ${insertedRecords.length} ${dataType} records`;
+    if (unknownCustomerCount > 0) {
+      message += ` (${unknownCustomerCount} with Unknown customers)`;
+    }
     if (skippedRecords.length > 0) {
       message += ` (${skippedRecords.length} duplicates skipped)`;
     }
@@ -903,7 +1085,8 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       message: message,
       records: insertedRecords,
       skipped: skippedRecords.length,
-      inserted: insertedRecords.length
+      inserted: insertedRecords.length,
+      unknownCustomers: unknownCustomerCount
     });
 
   } catch (error) {
