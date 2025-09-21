@@ -109,64 +109,105 @@
             min-width: 150px;
         }
 
-        .title-selection {
-            display: grid;
-            grid-template-columns: 1fr 100px 1fr;
-            gap: 20px;
-            align-items: start;
+        /* Autocomplete styles */
+        .autocomplete-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
         }
 
-        .title-list {
+        .title-search-input {
+            width: 100%;
+            padding: 10px 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            max-height: 300px;
-            overflow-y: auto;
+            font-family: 'Courier', monospace;
+            font-size: 14px;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
             background: white;
-            padding: 10px;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
         }
 
-        .title-item {
-            display: flex;
-            align-items: center;
-            padding: 5px;
-            margin-bottom: 5px;
+        .autocomplete-item {
+            padding: 10px 12px;
             cursor: pointer;
-            border-radius: 3px;
-            font-size: 11px;
+            font-size: 12px;
+            border-bottom: 1px solid #f0f0f0;
         }
 
-        .title-item:hover {
+        .autocomplete-item:hover,
+        .autocomplete-item.highlighted {
             background: #f0f0f0;
         }
 
-        .title-item input[type="checkbox"] {
-            margin-right: 8px;
+        .autocomplete-item:last-child {
+            border-bottom: none;
         }
 
-        .transfer-buttons {
+        .selected-titles-container {
+            margin-top: 15px;
+        }
+
+        .selected-titles-list {
             display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-self: center;
-        }
-
-        .transfer-btn {
-            background: #666;
-            color: white;
-            border: none;
-            padding: 8px 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            min-height: 40px;
+            padding: 10px;
+            border: 1px solid #ddd;
             border-radius: 4px;
+            background: #f8f9fa;
+        }
+
+        .selected-title-tag {
+            display: inline-flex;
+            align-items: center;
+            background: #007bff;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            gap: 5px;
+        }
+
+        .remove-title {
+            background: none;
+            border: none;
+            color: white;
             cursor: pointer;
+            font-size: 14px;
+            padding: 0;
+            margin: 0;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .remove-title:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .no-titles-selected {
+            color: #666;
+            font-style: italic;
             font-size: 12px;
-            transition: background-color 0.3s;
-        }
-
-        .transfer-btn:hover {
-            background: #333;
-        }
-
-        .selected-titles {
-            background: #e8f5e8;
+            padding: 5px;
         }
 
         button {
@@ -376,26 +417,19 @@
 
             <div class="form-section">
                 <h3>Select Titles</h3>
-                <div class="title-selection">
-                    <div>
-                        <h4>Available Titles</h4>
-                        <div class="title-list" id="availableTitles">
-                            <div class="loading">Loading titles...</div>
-                        </div>
+                <div class="form-group">
+                    <label for="titleSearch">Search and Add Titles:</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="titleSearch" class="title-search-input" 
+                               placeholder="Start typing to search for titles..." autocomplete="off">
+                        <div id="autocompleteDropdown" class="autocomplete-dropdown"></div>
                     </div>
-                    
-                    <div class="transfer-buttons">
-                        <button type="button" class="transfer-btn" id="addTitlesBtn">Add →</button>
-                        <button type="button" class="transfer-btn" id="removeTitlesBtn">← Remove</button>
-                        <button type="button" class="transfer-btn" id="addAllBtn">Add All</button>
-                        <button type="button" class="transfer-btn" id="removeAllBtn">Remove All</button>
-                    </div>
-                    
-                    <div>
-                        <h4>Selected Titles</h4>
-                        <div class="title-list selected-titles" id="selectedTitles">
-                            <div class="no-results">No titles selected</div>
-                        </div>
+                </div>
+                
+                <div class="selected-titles-container">
+                    <label>Selected Titles:</label>
+                    <div id="selectedTitlesList" class="selected-titles-list">
+                        <div class="no-titles-selected">No titles selected. Start typing above to add titles.</div>
                     </div>
                 </div>
             </div>
@@ -440,20 +474,18 @@
 
     <script>
         // Global variables
-        let availableTitlesData = [];
-        let selectedTitlesData = [];
+        let availableTitles = [];
+        let selectedTitles = [];
         let reportData = [];
+        let currentHighlightIndex = -1;
 
         // DOM elements
         const publisherName = document.getElementById('publisherName');
         const startDate = document.getElementById('startDate');
         const endDate = document.getElementById('endDate');
-        const availableTitles = document.getElementById('availableTitles');
-        const selectedTitles = document.getElementById('selectedTitles');
-        const addTitlesBtn = document.getElementById('addTitlesBtn');
-        const removeTitlesBtn = document.getElementById('removeTitlesBtn');
-        const addAllBtn = document.getElementById('addAllBtn');
-        const removeAllBtn = document.getElementById('removeAllBtn');
+        const titleSearch = document.getElementById('titleSearch');
+        const autocompleteDropdown = document.getElementById('autocompleteDropdown');
+        const selectedTitlesList = document.getElementById('selectedTitlesList');
         const generateReportBtn = document.getElementById('generateReportBtn');
         const clearFormBtn = document.getElementById('clearFormBtn');
         const reportResults = document.getElementById('reportResults');
@@ -471,10 +503,9 @@
         const successText = document.getElementById('successText');
 
         // Event listeners
-        addTitlesBtn.addEventListener('click', addSelectedTitles);
-        removeTitlesBtn.addEventListener('click', removeSelectedTitles);
-        addAllBtn.addEventListener('click', addAllTitles);
-        removeAllBtn.addEventListener('click', removeAllTitles);
+        titleSearch.addEventListener('input', handleTitleSearch);
+        titleSearch.addEventListener('keydown', handleKeyNavigation);
+        titleSearch.addEventListener('blur', hideSuggestions);
         generateReportBtn.addEventListener('click', generateReport);
         clearFormBtn.addEventListener('click', clearForm);
         exportCsvBtn.addEventListener('click', exportToCsv);
@@ -504,113 +535,153 @@
         // Load available titles on page load
         async function loadAvailableTitles() {
             try {
-                availableTitles.innerHTML = '<div class="loading">Loading titles...</div>';
-                
                 const response = await fetch('/api/titles');
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 const titles = await response.json();
-                availableTitlesData = titles.filter(title => !title.excluded); // Exclude titles marked as excluded
+                availableTitles = titles.map(title => title.title).sort();
                 
-                renderAvailableTitles();
+                console.log(`Loaded ${availableTitles.length} available titles`);
             } catch (error) {
                 showError('Failed to load titles: ' + error.message);
-                availableTitles.innerHTML = '<div class="no-results">Error loading titles</div>';
             }
         }
 
-        // Render available titles
-        function renderAvailableTitles() {
-            if (availableTitlesData.length === 0) {
-                availableTitles.innerHTML = '<div class="no-results">No titles available</div>';
+        // Handle title search and autocomplete
+        function handleTitleSearch(e) {
+            const query = e.target.value.toLowerCase().trim();
+            
+            if (query.length < 2) {
+                hideSuggestions();
                 return;
             }
 
-            availableTitles.innerHTML = availableTitlesData.map(title => `
-                <div class="title-item" data-title="${title.title}">
-                    <input type="checkbox" id="available_${title.title}" value="${title.title}">
-                    <label for="available_${title.title}">${title.title}</label>
-                </div>
-            `).join('');
+            const filteredTitles = availableTitles.filter(title => 
+                title.toLowerCase().includes(query) && !selectedTitles.includes(title)
+            ).slice(0, 10); // Limit to 10 suggestions
+
+            showSuggestions(filteredTitles);
+        }
+
+        // Show autocomplete suggestions
+        function showSuggestions(titles) {
+            if (titles.length === 0) {
+                hideSuggestions();
+                return;
+            }
+
+            autocompleteDropdown.innerHTML = titles.map((title, index) => 
+                `<div class="autocomplete-item" data-index="${index}" data-title="${title}">${title}</div>`
+            ).join('');
+
+            // Add click listeners to suggestions
+            autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // Prevent blur event
+                    addTitle(item.dataset.title);
+                });
+            });
+
+            autocompleteDropdown.style.display = 'block';
+            currentHighlightIndex = -1;
+        }
+
+        // Hide suggestions
+        function hideSuggestions() {
+            setTimeout(() => {
+                autocompleteDropdown.style.display = 'none';
+            }, 150); // Delay to allow click events
+        }
+
+        // Handle keyboard navigation
+        function handleKeyNavigation(e) {
+            const items = autocompleteDropdown.querySelectorAll('.autocomplete-item');
+            
+            if (items.length === 0) return;
+
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    currentHighlightIndex = Math.min(currentHighlightIndex + 1, items.length - 1);
+                    updateHighlight(items);
+                    break;
+                    
+                case 'ArrowUp':
+                    e.preventDefault();
+                    currentHighlightIndex = Math.max(currentHighlightIndex - 1, -1);
+                    updateHighlight(items);
+                    break;
+                    
+                case 'Enter':
+                    e.preventDefault();
+                    if (currentHighlightIndex >= 0) {
+                        addTitle(items[currentHighlightIndex].dataset.title);
+                    }
+                    break;
+                    
+                case 'Escape':
+                    hideSuggestions();
+                    titleSearch.blur();
+                    break;
+            }
+        }
+
+        // Update visual highlight
+        function updateHighlight(items) {
+            items.forEach((item, index) => {
+                item.classList.toggle('highlighted', index === currentHighlightIndex);
+            });
+        }
+
+        // Add title to selected list
+        function addTitle(title) {
+            if (!selectedTitles.includes(title)) {
+                selectedTitles.push(title);
+                renderSelectedTitles();
+            }
+            
+            titleSearch.value = '';
+            hideSuggestions();
+            titleSearch.focus();
+        }
+
+        // Remove title from selected list
+        function removeTitle(title) {
+            selectedTitles = selectedTitles.filter(t => t !== title);
+            renderSelectedTitles();
         }
 
         // Render selected titles
         function renderSelectedTitles() {
-            if (selectedTitlesData.length === 0) {
-                selectedTitles.innerHTML = '<div class="no-results">No titles selected</div>';
+            if (selectedTitles.length === 0) {
+                selectedTitlesList.innerHTML = '<div class="no-titles-selected">No titles selected. Start typing above to add titles.</div>';
                 return;
             }
 
-            selectedTitles.innerHTML = selectedTitlesData.map(title => `
-                <div class="title-item" data-title="${title}">
-                    <input type="checkbox" id="selected_${title}" value="${title}">
-                    <label for="selected_${title}">${title}</label>
+            selectedTitlesList.innerHTML = selectedTitles.map(title => `
+                <div class="selected-title-tag">
+                    <span>${title}</span>
+                    <button type="button" class="remove-title" onclick="removeTitle('${title.replace(/'/g, "\\'")}')">×</button>
                 </div>
             `).join('');
         }
 
-        // Add selected titles
-        function addSelectedTitles() {
-            const checkedBoxes = availableTitles.querySelectorAll('input[type="checkbox"]:checked');
-            checkedBoxes.forEach(checkbox => {
-                const title = checkbox.value;
-                if (!selectedTitlesData.includes(title)) {
-                    selectedTitlesData.push(title);
-                }
-            });
-            
-            // Remove added titles from available
-            availableTitlesData = availableTitlesData.filter(title => !selectedTitlesData.includes(title.title));
-            
-            renderAvailableTitles();
-            renderSelectedTitles();
-        }
-
-        // Remove selected titles
-        function removeSelectedTitles() {
-            const checkedBoxes = selectedTitles.querySelectorAll('input[type="checkbox"]:checked');
-            const titlesToRemove = Array.from(checkedBoxes).map(cb => cb.value);
-            
-            // Add back to available titles
-            titlesToRemove.forEach(title => {
-                availableTitlesData.push({ title: title, excluded: false });
-                selectedTitlesData = selectedTitlesData.filter(t => t !== title);
-            });
-            
-            renderAvailableTitles();
-            renderSelectedTitles();
-        }
-
-        // Add all titles
-        function addAllTitles() {
-            selectedTitlesData = [...selectedTitlesData, ...availableTitlesData.map(t => t.title)];
-            availableTitlesData = [];
-            
-            renderAvailableTitles();
-            renderSelectedTitles();
-        }
-
-        // Remove all titles
-        function removeAllTitles() {
-            availableTitlesData = [...availableTitlesData, ...selectedTitlesData.map(t => ({ title: t, excluded: false }))];
-            selectedTitlesData = [];
-            
-            renderAvailableTitles();
-            renderSelectedTitles();
-        }
+        // Make removeTitle globally available
+        window.removeTitle = removeTitle;
 
         // Clear form
         function clearForm() {
             publisherName.value = '';
             startDate.value = '';
             endDate.value = '';
-            selectedTitlesData = [];
+            titleSearch.value = '';
+            selectedTitles = [];
             reportResults.style.display = 'none';
             hideMessages();
-            
-            loadAvailableTitles(); // Reload all titles
+            hideSuggestions();
+            renderSelectedTitles();
         }
 
         // Generate report
@@ -628,7 +699,7 @@
                 return;
             }
             
-            if (selectedTitlesData.length === 0) {
+            if (selectedTitles.length === 0) {
                 showError('Please select at least one title');
                 return;
             }
@@ -654,7 +725,7 @@
                         publisher: publisherName.value.trim(),
                         startDate: startDate.value,
                         endDate: endDate.value,
-                        titles: selectedTitlesData
+                        titles: selectedTitles
                     })
                 });
 
@@ -680,7 +751,7 @@
         // Display report
         function displayReport(result) {
             reportTitle.textContent = `Customer Report - ${publisherName.value}`;
-            reportSummary.textContent = `${result.totalCustomers} customers found for ${selectedTitlesData.length} titles (${startDate.value} to ${endDate.value})`;
+            reportSummary.textContent = `${result.totalCustomers} customers found for ${selectedTitles.length} titles (${startDate.value} to ${endDate.value})`;
             
             // Update filter dropdowns
             updateFilterOptions(result.data);
