@@ -502,6 +502,55 @@
         const errorText = document.getElementById('errorText');
         const successText = document.getElementById('successText');
 
+        // Country code to full name mapping
+        const countryCodeMap = {
+            'UK': 'United Kingdom',
+            'GB': 'United Kingdom',
+            'US': 'United States',
+            'USA': 'United States',
+            'FR': 'France',
+            'DE': 'Germany',
+            'IT': 'Italy',
+            'ES': 'Spain',
+            'NL': 'Netherlands',
+            'BE': 'Belgium',
+            'AT': 'Austria',
+            'CH': 'Switzerland',
+            'SE': 'Sweden',
+            'NO': 'Norway',
+            'DK': 'Denmark',
+            'FI': 'Finland',
+            'PL': 'Poland',
+            'PT': 'Portugal',
+            'IE': 'Ireland',
+            'CZ': 'Czech Republic',
+            'HU': 'Hungary',
+            'RO': 'Romania',
+            'GR': 'Greece',
+            'CA': 'Canada',
+            'AU': 'Australia',
+            'NZ': 'New Zealand',
+            'JP': 'Japan',
+            'CN': 'China',
+            'IN': 'India',
+            'BR': 'Brazil',
+            'MX': 'Mexico',
+            'AR': 'Argentina',
+            'ZA': 'South Africa',
+            'SG': 'Singapore',
+            'HK': 'Hong Kong',
+            'KR': 'South Korea',
+            'TW': 'Taiwan',
+            'Unknown': 'Unknown'
+        };
+
+        // Function to expand country code to full name
+        function expandCountryName(countryCode) {
+            if (!countryCode) return 'Unknown';
+            const upperCode = countryCode.toUpperCase().trim();
+            return countryCodeMap[upperCode] || countryCode;
+        }
+
         // Event listeners
         titleSearch.addEventListener('input', handleTitleSearch);
         titleSearch.addEventListener('keydown', handleKeyNavigation);
@@ -862,35 +911,64 @@
             renderReportContent(filteredData);
         }
 
-        // Export to CSV
+        // Export to CSV - Enhanced version
         function exportToCsv() {
             if (reportData.length === 0) {
                 showError('No data to export');
                 return;
             }
             
-            const headers = ['Publisher', 'Country', 'City', 'Customer Name', 'Total Orders', 'Total Quantity', 'Total Revenue', 'Last Order'];
+            // Create a copy of the data with expanded country names
+            const exportData = reportData.map(row => ({
+                ...row,
+                country: expandCountryName(row.country)
+            }));
+            
+            // Group data by country count for sorting
+            const countryCustomerCounts = exportData.reduce((acc, item) => {
+                acc[item.country] = (acc[item.country] || 0) + 1;
+                return acc;
+            }, {});
+            
+            // Sort data: by country (by customer count desc), then by city, then by customer name
+            exportData.sort((a, b) => {
+                // First sort by country based on customer count
+                const countryDiff = countryCustomerCounts[b.country] - countryCustomerCounts[a.country];
+                if (countryDiff !== 0) return countryDiff;
+                
+                // Then by city alphabetically
+                const cityCompare = (a.city || '').localeCompare(b.city || '');
+                if (cityCompare !== 0) return cityCompare;
+                
+                // Finally by customer name alphabetically
+                return a.customer_name.localeCompare(b.customer_name);
+            });
+            
+            // Create CSV content with limited columns
+            const headers = ['Publisher', 'Retailer Name', 'City', 'Country'];
             const csvContent = [
                 headers.join(','),
-                ...reportData.map(row => [
+                ...exportData.map(row => [
                     `"${publisherName.value}"`,
-                    `"${row.country}"`,
-                    `"${row.city}"`,
-                    `"${row.customer_name}"`,
-                    row.total_orders,
-                    row.total_quantity,
-                    parseFloat(row.total_revenue).toFixed(2),
-                    row.last_order ? new Date(row.last_order).toLocaleDateString() : 'N/A'
+                    `"${row.customer_name.replace(/"/g, '""')}"`,  // Escape quotes in customer names
+                    `"${row.city || ''}"`,
+                    `"${row.country}"`
                 ].join(','))
             ].join('\n');
             
-            const blob = new Blob([csvContent], { type: 'text/csv' });
+            // Create blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `customer-report-${publisherName.value}-${startDate.value}-${endDate.value}.csv`;
+            
+            // Format filename with publisher name only
+            a.download = `${publisherName.value}_Stockists.csv`;
+            
             a.click();
             window.URL.revokeObjectURL(url);
+            
+            showSuccess('CSV exported successfully');
         }
 
         // Print report
