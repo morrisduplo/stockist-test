@@ -40,7 +40,7 @@ const upload = multer({
 // Initialize database tables
 async function initDatabase() {
   try {
-    // Create records table with city field
+    // Create records table with additional fields for duplicate detection
     await pool.query(`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -53,17 +53,43 @@ async function initDatabase() {
         total DECIMAL(10,2),
         country VARCHAR(100),
         city VARCHAR(100),
-        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        order_reference VARCHAR(100),
+        line_identifier TEXT
       )
     `);
     
-    // Add city column if it doesn't exist (for existing databases)
+    // Add new columns if they don't exist (for existing databases)
     try {
       await pool.query('ALTER TABLE records ADD COLUMN city VARCHAR(100)');
       console.log('Added city column to records table');
     } catch (err) {
-      // Column probably already exists, ignore error
       console.log('City column already exists or error adding it:', err.message);
+    }
+    
+    try {
+      await pool.query('ALTER TABLE records ADD COLUMN order_reference VARCHAR(100)');
+      console.log('Added order_reference column to records table');
+    } catch (err) {
+      console.log('Order_reference column already exists or error adding it:', err.message);
+    }
+    
+    try {
+      await pool.query('ALTER TABLE records ADD COLUMN line_identifier TEXT');
+      console.log('Added line_identifier column to records table');
+    } catch (err) {
+      console.log('Line_identifier column already exists or error adding it:', err.message);
+    }
+    
+    // Create unique index for duplicate prevention
+    try {
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_order_line 
+        ON records (order_reference, title, COALESCE(book_ean, ''), quantity, total)
+      `);
+      console.log('Created unique index for duplicate prevention');
+    } catch (err) {
+      console.log('Unique index already exists or error creating it:', err.message);
     }
     
     // Create upload_log table
@@ -214,7 +240,33 @@ function cleanCustomerName(rawName) {
   return cleaned;
 }
 
-// Process Shopify data (CSV format) with city support
+// Function to create unique line identifier for duplicate detection
+function createLineIdentifier(orderRef, title, ean, quantity, total) {
+  const cleanTitle = (title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const cleanEan = (ean || '').replace(/[^a-zA-Z0-9]/g, '');
+  return `${orderRef}_${cleanTitle}_${cleanEan}_${quantity}_${total}`;
+}
+
+// Function to check if record already exists
+async function recordExists(orderRef, title, ean, quantity, total) {
+  try {
+    const result = await pool.query(`
+      SELECT id FROM records 
+      WHERE order_reference = $1 
+      AND title = $2 
+      AND COALESCE(book_ean, '') = COALESCE($3, '')
+      AND quantity = $4 
+      AND total = $5
+    `, [orderRef, title, ean || '', quantity, total]);
+    
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('Error checking if record exists:', error);
+    return false;
+  }
+}
+
+// Process Shopify data (CSV format) with duplicate prevention
 function processShopifyData(rawData) {
   console.log('=== DEBUGGING CSV PROCESSING ===');
   console.log('Raw data length:', rawData.length);
@@ -223,11 +275,11 @@ function processShopifyData(rawData) {
   const columns = Object.keys(rawData[0] || {});
   console.log('Available columns:', columns);
   
-  // Step 1: Group data by order number
+  // Step 1: Group data by order number (Name column - Column A)
   const orderGroups = new Map();
   
   rawData.forEach((row, index) => {
-    const orderNumber = row['Name'];
+    const orderNumber = row['Name']; // This is the unique order identifier (Column A)
     if (!orderNumber) {
       console.log(`Row ${index + 1}: No order number, skipping`);
       return;
@@ -312,28 +364,32 @@ function processShopifyData(rawData) {
       const quantity = parseInt(item['Lineitem quantity']) || 0;
       const itemPrice = parseFloat(item['Lineitem price']) || 0;
       const totalPrice = itemPrice * quantity;
+      const title = item['Lineitem name'] || 'Unknown Product';
+      const ean = item['Lineitem sku'] || null;
       
       const record = {
         order_date: parseDate(item['Created at']),
         cus_no: null,
         customer_name: customerName,
-        title: item['Lineitem name'] || 'Unknown Product',
-        book_ean: item['Lineitem sku'] || null,
+        title: title,
+        book_ean: ean,
         quantity: quantity,
         total: totalPrice,
         country: country,
-        city: city
+        city: city,
+        order_reference: orderNumber, // Store the unique order reference (Name column)
+        line_identifier: createLineIdentifier(orderNumber, title, ean, quantity, totalPrice)
       };
       
       processedRecords.push(record);
     });
   });
   
-  console.log(`Created ${processedRecords.length} processed records`);
+  console.log(`Created ${processedRecords.length} processed Shopify records`);
   return processedRecords;
 }
 
-// Process Gazelle data (Excel format) with Unknown defaults
+// Process Gazelle data (Excel format) with Unknown defaults and duplicate prevention
 function processGazelleData(rawData) {
   console.log('=== PROCESSING GAZELLE DATA ===');
   console.log('Raw data length:', rawData.length);
@@ -345,19 +401,28 @@ function processGazelleData(rawData) {
       // Skip empty rows
       if (!row || Object.keys(row).length === 0) return;
       
-      // Gazelle format processing with UNKNOWN defaults instead of UK/London
+      // Gazelle format processing with duplicate prevention
       const keys = Object.keys(row);
+      
+      // Column E contains the Invoice number (unique order reference)
+      const invoiceNumber = row[keys[4]] || `INV_${index}_${Date.now()}`; // Column E (index 4)
+      const title = row[keys[5]] || 'Unknown';
+      const ean = row[keys[7]] || null;
+      const quantity = parseInt(row[keys[8]]) || 0;
+      const total = parseFloat(row[keys[9]]) || 0;
       
       const record = {
         order_date: parseDate(row[keys[0]] || new Date()),
         cus_no: row[keys[2]] || null,
         customer_name: row[keys[3]] || 'Unknown',
-        title: row[keys[5]] || 'Unknown',
-        book_ean: row[keys[7]] || null,
-        quantity: parseInt(row[keys[8]]) || 0,
-        total: parseFloat(row[keys[9]]) || 0,
+        title: title,
+        book_ean: ean,
+        quantity: quantity,
+        total: total,
         country: 'Unknown', // Changed from 'UK' to 'Unknown'
-        city: 'Unknown' // Changed from 'London' to 'Unknown'
+        city: 'Unknown', // Changed from 'London' to 'Unknown'
+        order_reference: invoiceNumber, // Store the invoice number as order reference
+        line_identifier: createLineIdentifier(invoiceNumber, title, ean, quantity, total)
       };
       
       processedRecords.push(record);
@@ -553,7 +618,7 @@ app.post('/clear-data', async (req, res) => {
   }
 });
 
-// Upload and process Excel/CSV file
+// Upload and process Excel/CSV file with duplicate prevention
 app.post('/upload', upload.single('excelFile'), async (req, res) => {
   try {
     if (!req.file) {
@@ -617,18 +682,41 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       processedRecords = processGazelleData(rawData);
     }
     
-    // Insert into database
+    // Insert into database with duplicate checking
     const insertedRecords = [];
+    const skippedRecords = [];
+    
     for (const record of processedRecords) {
       try {
+        // Check if record already exists
+        const exists = await recordExists(
+          record.order_reference, 
+          record.title, 
+          record.book_ean, 
+          record.quantity, 
+          record.total
+        );
+        
+        if (exists) {
+          console.log(`Skipping duplicate record: Order ${record.order_reference}, Product: ${record.title}`);
+          skippedRecords.push(record);
+          continue;
+        }
+        
+        // Insert the record
         const result = await pool.query(
-          'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country, city) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-          [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country, record.city]
+          'INSERT INTO records (order_date, cus_no, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+          [record.order_date, record.cus_no, record.customer_name, record.title, record.book_ean, record.quantity, record.total, record.country, record.city, record.order_reference, record.line_identifier]
         );
         
         insertedRecords.push(result.rows[0]);
       } catch (dbError) {
-        console.error('Database insert error for record:', record, dbError);
+        if (dbError.code === '23505') { // Unique constraint violation
+          console.log(`Duplicate record detected and skipped: ${record.order_reference}`);
+          skippedRecords.push(record);
+        } else {
+          console.error('Database insert error for record:', record, dbError);
+        }
       }
     }
 
@@ -638,9 +726,16 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       [`${dataType.toUpperCase()}: ${req.file.originalname}`, insertedRecords.length]
     );
 
+    let message = `Successfully processed ${insertedRecords.length} ${dataType} records`;
+    if (skippedRecords.length > 0) {
+      message += ` (${skippedRecords.length} duplicates skipped)`;
+    }
+
     res.json({ 
-      message: `Successfully processed ${insertedRecords.length} ${dataType} records`, 
-      records: insertedRecords 
+      message: message,
+      records: insertedRecords,
+      skipped: skippedRecords.length,
+      inserted: insertedRecords.length
     });
 
   } catch (error) {
