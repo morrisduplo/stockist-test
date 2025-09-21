@@ -448,7 +448,6 @@
                     <div class="report-summary" id="reportSummary"></div>
                 </div>
                 <div class="export-buttons">
-                    <button type="button" id="exportCsvBtn" class="btn-secondary">Export CSV</button>
                     <button type="button" id="exportExcelBtn" class="btn-secondary">Export Excel</button>
                     <button type="button" id="exportTxtBtn" class="btn-secondary">Export TXT</button>
                     <button type="button" id="exportPrintBtn" class="btn-secondary">Print Report</button>
@@ -494,7 +493,6 @@
         const reportTitle = document.getElementById('reportTitle');
         const reportSummary = document.getElementById('reportSummary');
         const reportContent = document.getElementById('reportContent');
-        const exportCsvBtn = document.getElementById('exportCsvBtn');
         const exportExcelBtn = document.getElementById('exportExcelBtn');
         const exportTxtBtn = document.getElementById('exportTxtBtn');
         const exportPrintBtn = document.getElementById('exportPrintBtn');
@@ -830,7 +828,6 @@
         titleSearch.addEventListener('blur', hideSuggestions);
         generateReportBtn.addEventListener('click', generateReport);
         clearFormBtn.addEventListener('click', clearForm);
-        exportCsvBtn.addEventListener('click', exportToCsv);
         exportExcelBtn.addEventListener('click', exportToExcel);
         exportTxtBtn.addEventListener('click', exportToTxt);
         exportPrintBtn.addEventListener('click', printReport);
