@@ -63,6 +63,119 @@
             background: #f1f3f4;
         }
 
+        /* Unknown Location Section */
+        .unknown-section {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .unknown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .unknown-title {
+            font-size: 18px;
+            color: #856404;
+            font-weight: bold;
+        }
+
+        .unknown-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-export-unknown {
+            background: #ffc107;
+            color: #333;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s;
+        }
+
+        .btn-export-unknown:hover {
+            background: #e0a800;
+        }
+
+        .btn-import-updates {
+            background: #28a745;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s;
+        }
+
+        .btn-import-updates:hover {
+            background: #218838;
+        }
+
+        .unknown-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .unknown-stat {
+            background: white;
+            padding: 10px 15px;
+            border-radius: 4px;
+            border: 1px solid #ffc107;
+        }
+
+        .unknown-count {
+            font-size: 24px;
+            font-weight: bold;
+            color: #856404;
+        }
+
+        .unknown-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        /* File upload area */
+        .file-upload-area {
+            display: none;
+            padding: 15px;
+            border: 2px dashed #28a745;
+            border-radius: 4px;
+            background: #f8f9fa;
+            margin-top: 15px;
+        }
+
+        .file-upload-area.active {
+            display: block;
+        }
+
+        .upload-input {
+            display: none;
+        }
+
+        .upload-label {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        .upload-label:hover {
+            background: #218838;
+        }
+
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -160,6 +273,15 @@
 
         .btn-include:hover {
             background: #229954;
+        }
+
+        .btn-view-unknown {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .btn-view-unknown:hover {
+            background: #e0a800;
         }
 
         .selection-count {
@@ -269,6 +391,19 @@
             margin-bottom: 20px;
             border: 1px solid #f5c6cb;
         }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+
+        .highlight-unknown {
+            background-color: #fff3cd !important;
+        }
     </style>
 </head>
 <body>
@@ -278,9 +413,44 @@
             <a href="/" class="back-link">← Back to Dashboard</a>
         </div>
 
-        <!-- Error Message -->
+        <!-- Error/Success Messages -->
         <div id="errorMessage" class="error-message" style="display: none;">
             <strong>Error:</strong> <span id="errorText"></span>
+        </div>
+        <div id="successMessage" class="success-message" style="display: none;">
+            <span id="successText"></span>
+        </div>
+
+        <!-- Unknown Location Section -->
+        <div class="unknown-section">
+            <div class="unknown-header">
+                <div class="unknown-title">Unknown Location Management</div>
+                <div class="unknown-buttons">
+                    <button id="viewUnknownBtn" class="btn-view-unknown">View Unknown Locations</button>
+                    <button id="exportUnknownBtn" class="btn-export-unknown">Export Unknown to CSV</button>
+                    <button id="importUpdatesBtn" class="btn-import-updates">Import Updates</button>
+                </div>
+            </div>
+            <div class="unknown-stats">
+                <div class="unknown-stat">
+                    <div class="unknown-count" id="unknownCityCount">-</div>
+                    <div class="unknown-label">Unknown Cities</div>
+                </div>
+                <div class="unknown-stat">
+                    <div class="unknown-count" id="unknownCountryCount">-</div>
+                    <div class="unknown-label">Unknown Countries</div>
+                </div>
+                <div class="unknown-stat">
+                    <div class="unknown-count" id="unknownBothCount">-</div>
+                    <div class="unknown-label">Both Unknown</div>
+                </div>
+            </div>
+            <div id="fileUploadArea" class="file-upload-area">
+                <input type="file" id="uploadInput" class="upload-input" accept=".csv">
+                <label for="uploadInput" class="upload-label">Choose CSV File</label>
+                <span id="fileName">No file selected</span>
+                <button id="processImportBtn" style="display: none; margin-left: 10px;">Process Import</button>
+            </div>
         </div>
 
         <div class="stats">
@@ -310,6 +480,14 @@
                 <label>Country:</label>
                 <select id="countryFilter">
                     <option value="">All Countries</option>
+                    <option value="Unknown">Unknown Only</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>City:</label>
+                <select id="cityFilter">
+                    <option value="">All Cities</option>
+                    <option value="Unknown">Unknown Only</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -342,6 +520,7 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const searchBox = document.getElementById('searchBox');
         const countryFilter = document.getElementById('countryFilter');
+        const cityFilter = document.getElementById('cityFilter');
         const statusFilter = document.getElementById('statusFilter');
         const totalCustomers = document.getElementById('totalCustomers');
         const totalCountries = document.getElementById('totalCountries');
@@ -353,30 +532,238 @@
         const includeSelectedBtn = document.getElementById('includeSelectedBtn');
         const selectionCount = document.getElementById('selectionCount');
         const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
         const errorText = document.getElementById('errorText');
+        const successText = document.getElementById('successText');
+        
+        // Unknown location elements
+        const unknownCityCount = document.getElementById('unknownCityCount');
+        const unknownCountryCount = document.getElementById('unknownCountryCount');
+        const unknownBothCount = document.getElementById('unknownBothCount');
+        const viewUnknownBtn = document.getElementById('viewUnknownBtn');
+        const exportUnknownBtn = document.getElementById('exportUnknownBtn');
+        const importUpdatesBtn = document.getElementById('importUpdatesBtn');
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        const uploadInput = document.getElementById('uploadInput');
+        const fileName = document.getElementById('fileName');
+        const processImportBtn = document.getElementById('processImportBtn');
 
         let customersData = [];
         let filteredData = [];
         let selectedCustomers = new Set();
+        let viewingUnknown = false;
 
         // Event listeners
         refreshBtn.addEventListener('click', loadCustomers);
         searchBox.addEventListener('input', filterCustomers);
         countryFilter.addEventListener('change', filterCustomers);
+        cityFilter.addEventListener('change', filterCustomers);
         statusFilter.addEventListener('change', filterCustomers);
         selectAllBtn.addEventListener('click', selectAll);
         deselectAllBtn.addEventListener('click', deselectAll);
         excludeSelectedBtn.addEventListener('click', excludeSelected);
         includeSelectedBtn.addEventListener('click', includeSelected);
+        
+        // Unknown location event listeners
+        viewUnknownBtn.addEventListener('click', toggleUnknownView);
+        exportUnknownBtn.addEventListener('click', exportUnknownToCSV);
+        importUpdatesBtn.addEventListener('click', toggleImportArea);
+        uploadInput.addEventListener('change', handleFileSelect);
+        processImportBtn.addEventListener('click', processImport);
 
         function showError(message) {
             errorText.textContent = message;
             errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
             console.error('Customer page error:', message);
         }
 
-        function hideError() {
+        function showSuccess(message) {
+            successText.textContent = message;
+            successMessage.style.display = 'block';
             errorMessage.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+        }
+
+        // Calculate unknown location statistics
+        function updateUnknownStats() {
+            const unknownCity = customersData.filter(c => !c.city || c.city === 'Unknown').length;
+            const unknownCountry = customersData.filter(c => !c.country || c.country === 'Unknown').length;
+            const unknownBoth = customersData.filter(c => 
+                (!c.city || c.city === 'Unknown') && (!c.country || c.country === 'Unknown')
+            ).length;
+
+            unknownCityCount.textContent = unknownCity;
+            unknownCountryCount.textContent = unknownCountry;
+            unknownBothCount.textContent = unknownBoth;
+        }
+
+        // Toggle view for unknown locations
+        function toggleUnknownView() {
+            viewingUnknown = !viewingUnknown;
+            
+            if (viewingUnknown) {
+                viewUnknownBtn.textContent = 'View All Customers';
+                // Filter to show only unknown locations
+                filteredData = customersData.filter(c => 
+                    (!c.city || c.city === 'Unknown') || (!c.country || c.country === 'Unknown')
+                );
+            } else {
+                viewUnknownBtn.textContent = 'View Unknown Locations';
+                filteredData = [...customersData];
+            }
+            
+            displayCustomers();
+        }
+
+        // Export unknown locations to CSV
+        function exportUnknownToCSV() {
+            const unknownCustomers = customersData.filter(c => 
+                (!c.city || c.city === 'Unknown') || (!c.country || c.country === 'Unknown')
+            );
+
+            if (unknownCustomers.length === 0) {
+                showError('No customers with unknown locations found');
+                return;
+            }
+
+            // Create CSV content
+            const headers = ['Customer Name', 'Current Country', 'Current City', 'New Country', 'New City'];
+            const csvContent = [
+                headers.join(','),
+                ...unknownCustomers.map(customer => [
+                    `"${customer.customer_name}"`,
+                    `"${customer.country || 'Unknown'}"`,
+                    `"${customer.city || 'Unknown'}"`,
+                    '""', // Empty for new country
+                    '""'  // Empty for new city
+                ].join(','))
+            ].join('\n');
+
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `unknown_locations_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            showSuccess(`Exported ${unknownCustomers.length} customers with unknown locations`);
+        }
+
+        // Toggle import area
+        function toggleImportArea() {
+            fileUploadArea.classList.toggle('active');
+        }
+
+        // Handle file selection
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                processImportBtn.style.display = 'inline-block';
+            }
+        }
+
+        // Process import
+        async function processImport() {
+            const file = uploadInput.files[0];
+            if (!file) {
+                showError('Please select a file');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const csv = e.target.result;
+                    const lines = csv.split('\n');
+                    const updates = [];
+
+                    // Skip header row
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+
+                        const values = parseCSVLine(line);
+                        const customerName = values[0]?.replace(/^"|"$/g, '');
+                        const newCountry = values[3]?.replace(/^"|"$/g, '');
+                        const newCity = values[4]?.replace(/^"|"$/g, '');
+
+                        if (customerName && (newCountry || newCity)) {
+                            updates.push({
+                                customerName: customerName,
+                                country: newCountry || values[1]?.replace(/^"|"$/g, ''),
+                                city: newCity || values[2]?.replace(/^"|"$/g, '')
+                            });
+                        }
+                    }
+
+                    if (updates.length === 0) {
+                        showError('No valid updates found in the CSV file');
+                        return;
+                    }
+
+                    // Send updates to server
+                    processImportBtn.disabled = true;
+                    processImportBtn.textContent = 'Processing...';
+
+                    const response = await fetch('/api/customers/bulk-update', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ updates: updates })
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showSuccess(`Successfully updated ${result.updated} customers`);
+                        fileUploadArea.classList.remove('active');
+                        uploadInput.value = '';
+                        fileName.textContent = 'No file selected';
+                        processImportBtn.style.display = 'none';
+                        loadCustomers(); // Refresh data
+                    } else {
+                        throw new Error('Failed to update customers');
+                    }
+                } catch (error) {
+                    showError('Error processing import: ' + error.message);
+                } finally {
+                    processImportBtn.disabled = false;
+                    processImportBtn.textContent = 'Process Import';
+                }
+            };
+
+            reader.readAsText(file);
+        }
+
+        // Parse CSV line handling quotes
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            result.push(current.trim());
+            return result;
         }
 
         // Handle checkbox changes
@@ -402,7 +789,7 @@
         // Load customer data
         async function loadCustomers() {
             try {
-                hideError();
+                hideMessages();
                 customersContainer.innerHTML = '<div class="loading">Loading customer data...</div>';
                 
                 const response = await fetch('/api/customers');
@@ -415,12 +802,16 @@
                 
                 customersData = data.customers || [];
                 filteredData = [...customersData];
+                viewingUnknown = false;
+                viewUnknownBtn.textContent = 'View Unknown Locations';
                 
                 if (data.stats) {
                     updateStats(data.stats);
                 }
                 
+                updateUnknownStats();
                 updateCountryFilter();
+                updateCityFilter();
                 displayCustomers();
                 
             } catch (error) {
@@ -444,30 +835,56 @@
             const currentValue = countryFilter.value;
             
             countryFilter.innerHTML = '<option value="">All Countries</option>';
+            countryFilter.innerHTML += '<option value="Unknown">Unknown Only</option>';
             countries.forEach(country => {
-                const option = document.createElement('option');
-                option.value = country;
-                option.textContent = country;
-                countryFilter.appendChild(option);
+                if (country && country !== 'Unknown') {
+                    const option = document.createElement('option');
+                    option.value = country;
+                    option.textContent = country;
+                    countryFilter.appendChild(option);
+                }
             });
             
             countryFilter.value = currentValue;
+        }
+
+        // Update city filter dropdown
+        function updateCityFilter() {
+            const cities = [...new Set(customersData.map(c => c.city))].sort();
+            const currentValue = cityFilter.value;
+            
+            cityFilter.innerHTML = '<option value="">All Cities</option>';
+            cityFilter.innerHTML += '<option value="Unknown">Unknown Only</option>';
+            cities.forEach(city => {
+                if (city && city !== 'Unknown') {
+                    const option = document.createElement('option');
+                    option.value = city;
+                    option.textContent = city;
+                    cityFilter.appendChild(option);
+                }
+            });
+            
+            cityFilter.value = currentValue;
         }
 
         // Filter customers
         function filterCustomers() {
             const searchTerm = searchBox.value.toLowerCase();
             const selectedCountry = countryFilter.value;
+            const selectedCity = cityFilter.value;
             const selectedStatus = statusFilter.value;
             
             filteredData = customersData.filter(customer => {
                 const matchesSearch = customer.customer_name.toLowerCase().includes(searchTerm);
-                const matchesCountry = !selectedCountry || customer.country === selectedCountry;
+                const matchesCountry = !selectedCountry || customer.country === selectedCountry || 
+                    (selectedCountry === 'Unknown' && (!customer.country || customer.country === 'Unknown'));
+                const matchesCity = !selectedCity || customer.city === selectedCity || 
+                    (selectedCity === 'Unknown' && (!customer.city || customer.city === 'Unknown'));
                 const matchesStatus = !selectedStatus || 
                     (selectedStatus === 'excluded' && customer.excluded) ||
                     (selectedStatus === 'included' && !customer.excluded);
                 
-                return matchesSearch && matchesCountry && matchesStatus;
+                return matchesSearch && matchesCountry && matchesCity && matchesStatus;
             });
             
             displayCustomers();
@@ -503,8 +920,10 @@
                     ${filteredData.map(customer => {
                         const isExcluded = customer.excluded || false;
                         const customerId = customer.customer_name;
+                        const hasUnknownLocation = (!customer.city || customer.city === 'Unknown') || 
+                                                   (!customer.country || customer.country === 'Unknown');
                         return `
-                            <tr class="${isExcluded ? 'excluded-row' : ''}" data-customer="${customerId}">
+                            <tr class="${isExcluded ? 'excluded-row' : ''} ${hasUnknownLocation ? 'highlight-unknown' : ''}" data-customer="${customerId}">
                                 <td class="checkbox-cell">
                                     <input type="checkbox" 
                                            class="exclusion-checkbox" 
@@ -518,7 +937,7 @@
                                 </td>
                                 <td>${customer.customer_name || 'N/A'}</td>
                                 <td class="edit-cell" data-customer="${customer.customer_name}" data-field="country">${customer.country || 'Unknown'}</td>
-                                <td class="edit-cell" data-customer="${customer.customer_name}" data-field="city">${customer.city || 'London'}</td>
+                                <td class="edit-cell" data-customer="${customer.customer_name}" data-field="city">${customer.city || 'Unknown'}</td>
                                 <td>${customer.total_orders || 0}</td>
                                 <td>${customer.total_quantity || 0}</td>
                                 <td>£${parseFloat(customer.total_revenue || 0).toFixed(2)}</td>
@@ -604,12 +1023,12 @@
 
                     deselectAll();
                     displayCustomers();
-                    alert(`Successfully excluded ${customerList.length} customer(s)`);
+                    showSuccess(`Successfully excluded ${customerList.length} customer(s)`);
                 } else {
                     throw new Error('Failed to exclude customers');
                 }
             } catch (error) {
-                alert('Error excluding customers: ' + error.message);
+                showError('Error excluding customers: ' + error.message);
             }
         }
 
@@ -648,12 +1067,12 @@
 
                     deselectAll();
                     displayCustomers();
-                    alert(`Successfully included ${customerList.length} customer(s)`);
+                    showSuccess(`Successfully included ${customerList.length} customer(s)`);
                 } else {
                     throw new Error('Failed to include customers');
                 }
             } catch (error) {
-                alert('Error including customers: ' + error.message);
+                showError('Error including customers: ' + error.message);
             }
         }
 
@@ -668,7 +1087,7 @@
                 cell.classList.add('editing');
                 
                 const select = document.createElement('select');
-                const countries = ['UK', 'US', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Other'];
+                const countries = ['Unknown', 'UK', 'US', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Other'];
                 
                 countries.forEach(country => {
                     const option = document.createElement('option');
@@ -747,14 +1166,20 @@
                         customer[field] = newValue;
                     }
                     
+                    updateUnknownStats();
+                    
                     if (field === 'country') {
                         updateCountryFilter();
+                    } else if (field === 'city') {
+                        updateCityFilter();
                     }
+                    
+                    showSuccess(`Updated ${field} for ${customerName}`);
                 } else {
                     throw new Error('Failed to update customer');
                 }
             } catch (error) {
-                alert('Error updating customer: ' + error.message);
+                showError('Error updating customer: ' + error.message);
                 cancelEdit(cell, oldValue);
             }
         }
