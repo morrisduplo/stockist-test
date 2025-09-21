@@ -618,6 +618,83 @@ app.post('/api/customers/update', async (req, res) => {
   }
 });
 
+// API endpoint to bulk update customer locations from CSV import
+app.post('/api/customers/bulk-update', async (req, res) => {
+  try {
+    const { updates } = req.body;
+    
+    if (!updates || !Array.isArray(updates)) {
+      return res.status(400).json({ error: 'Invalid update data' });
+    }
+    
+    console.log(`Bulk update request for ${updates.length} customers`);
+    
+    let updatedCount = 0;
+    const errors = [];
+    
+    // Start a transaction
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      for (const update of updates) {
+        const { customerName, country, city } = update;
+        
+        if (!customerName) {
+          errors.push(`Invalid customer name: ${customerName}`);
+          continue;
+        }
+        
+        // Update both country and city for this customer
+        const updateQuery = `
+          UPDATE records 
+          SET country = $1, city = $2, upload_date = CURRENT_TIMESTAMP
+          WHERE customer_name = $3
+        `;
+        
+        const result = await client.query(updateQuery, [
+          country || 'Unknown',
+          city || 'Unknown', 
+          customerName
+        ]);
+        
+        if (result.rowCount > 0) {
+          updatedCount++;
+          console.log(`Updated ${result.rowCount} records for customer: ${customerName}`);
+        } else {
+          errors.push(`Customer not found: ${customerName}`);
+        }
+      }
+      
+      await client.query('COMMIT');
+      
+      console.log(`Bulk update completed: ${updatedCount} customers updated`);
+      
+      if (errors.length > 0) {
+        console.warn('Bulk update errors:', errors);
+      }
+      
+      res.json({ 
+        success: true, 
+        updated: updatedCount,
+        total: updates.length,
+        errors: errors 
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('Bulk update error:', error);
+    res.status(500).json({ error: 'Failed to bulk update customers: ' + error.message });
+  }
+});
+
 // API endpoint to handle customer exclusions
 app.post('/api/customers/exclude', async (req, res) => {
   try {
