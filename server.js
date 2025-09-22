@@ -507,6 +507,11 @@ app.get('/reports', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reports.html'));
 });
 
+// Serve the settings page
+app.get('/settings', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
 // API endpoint to get available titles for reports (excluding excluded customers)
 app.get('/api/titles', async (req, res) => {
   try {
@@ -1022,6 +1027,292 @@ app.delete('/records/:id', async (req, res) => {
   } catch (error) {
     console.error('Delete error:', error);
     res.status(500).json({ error: 'Failed to delete record' });
+  }
+});
+
+// ============================================
+// SETTINGS PAGE ROUTES
+// ============================================
+
+// Store settings in memory (in production, you might want to use a database table)
+let appSettings = {
+  general: {
+    autoDetect: true,
+    skipDuplicates: true,
+    defaultCountry: 'Unknown',
+    defaultCity: 'Unknown'
+  },
+  advanced: {
+    recordsPerPage: 500,
+    debugLogging: false,
+    dbTimeout: 30
+  }
+};
+
+// Get customer name mappings
+app.get('/api/settings/mappings', (req, res) => {
+  const mappings = Object.entries(CUSTOMER_NAME_MAPPINGS).map(([oldName, newName]) => ({
+    oldName,
+    newName
+  }));
+  res.json(mappings);
+});
+
+// Add new customer name mapping
+app.post('/api/settings/mappings', (req, res) => {
+  const { oldName, newName } = req.body;
+  
+  if (!oldName || !newName) {
+    return res.status(400).json({ error: 'Both old and new names are required' });
+  }
+  
+  CUSTOMER_NAME_MAPPINGS[oldName] = newName;
+  
+  const mappings = Object.entries(CUSTOMER_NAME_MAPPINGS).map(([oldName, newName]) => ({
+    oldName,
+    newName
+  }));
+  
+  console.log(`Added mapping: "${oldName}" -> "${newName}"`);
+  res.json({ success: true, mappings });
+});
+
+// Remove customer name mapping
+app.delete('/api/settings/mappings/:index', (req, res) => {
+  const index = parseInt(req.params.index);
+  const entries = Object.entries(CUSTOMER_NAME_MAPPINGS);
+  
+  if (index >= 0 && index < entries.length) {
+    const [oldName] = entries[index];
+    delete CUSTOMER_NAME_MAPPINGS[oldName];
+    
+    console.log(`Removed mapping for: "${oldName}"`);
+  }
+  
+  const mappings = Object.entries(CUSTOMER_NAME_MAPPINGS).map(([oldName, newName]) => ({
+    oldName,
+    newName
+  }));
+  
+  res.json({ success: true, mappings });
+});
+
+// Import multiple mappings
+app.post('/api/settings/mappings/import', (req, res) => {
+  const { mappings } = req.body;
+  
+  if (!mappings || !Array.isArray(mappings)) {
+    return res.status(400).json({ error: 'Invalid mappings data' });
+  }
+  
+  // Add all mappings
+  mappings.forEach(({ oldName, newName }) => {
+    if (oldName && newName) {
+      CUSTOMER_NAME_MAPPINGS[oldName] = newName;
+    }
+  });
+  
+  const updatedMappings = Object.entries(CUSTOMER_NAME_MAPPINGS).map(([oldName, newName]) => ({
+    oldName,
+    newName
+  }));
+  
+  console.log(`Imported ${mappings.length} mappings`);
+  res.json({ success: true, mappings: updatedMappings });
+});
+
+// Get statistics for settings page
+app.get('/api/settings/statistics', async (req, res) => {
+  try {
+    const recordsCount = await pool.query('SELECT COUNT(*) FROM records');
+    const customersCount = await pool.query('SELECT COUNT(DISTINCT customer_name) FROM records');
+    const uploadsCount = await pool.query('SELECT COUNT(*) FROM upload_log');
+    const excludedCount = await pool.query('SELECT COUNT(*) FROM customer_exclusions WHERE excluded = true');
+    
+    res.json({
+      totalRecords: parseInt(recordsCount.rows[0].count),
+      totalCustomers: parseInt(customersCount.rows[0].count),
+      totalUploads: parseInt(uploadsCount.rows[0].count),
+      excludedCustomers: parseInt(excludedCount.rows[0].count)
+    });
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+// Get general settings
+app.get('/api/settings/general', (req, res) => {
+  res.json(appSettings.general);
+});
+
+// Save general settings
+app.post('/api/settings/general', (req, res) => {
+  const { autoDetect, skipDuplicates, defaultCountry, defaultCity } = req.body;
+  
+  appSettings.general = {
+    autoDetect: autoDetect !== undefined ? autoDetect : appSettings.general.autoDetect,
+    skipDuplicates: skipDuplicates !== undefined ? skipDuplicates : appSettings.general.skipDuplicates,
+    defaultCountry: defaultCountry || appSettings.general.defaultCountry,
+    defaultCity: defaultCity || appSettings.general.defaultCity
+  };
+  
+  console.log('Updated general settings:', appSettings.general);
+  res.json({ success: true, settings: appSettings.general });
+});
+
+// Get advanced settings
+app.get('/api/settings/advanced', (req, res) => {
+  res.json(appSettings.advanced);
+});
+
+// Save advanced settings
+app.post('/api/settings/advanced', (req, res) => {
+  const { recordsPerPage, debugLogging, dbTimeout } = req.body;
+  
+  appSettings.advanced = {
+    recordsPerPage: parseInt(recordsPerPage) || appSettings.advanced.recordsPerPage,
+    debugLogging: debugLogging !== undefined ? debugLogging : appSettings.advanced.debugLogging,
+    dbTimeout: parseInt(dbTimeout) || appSettings.advanced.dbTimeout
+  };
+  
+  console.log('Updated advanced settings:', appSettings.advanced);
+  res.json({ success: true, settings: appSettings.advanced });
+});
+
+// Backup database
+app.get('/api/backup', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM records 
+      ORDER BY upload_date DESC
+    `);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No data to backup' });
+    }
+    
+    // Create CSV content
+    const headers = Object.keys(result.rows[0]);
+    const csv = [
+      headers.join(','),
+      ...result.rows.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Handle null values and quotes
+          if (value === null || value === undefined) return '';
+          // Escape quotes and wrap in quotes if contains comma
+          const strValue = value.toString();
+          if (strValue.includes(',') || strValue.includes('"')) {
+            return `"${strValue.replace(/"/g, '""')}"`;
+          }
+          return strValue;
+        }).join(',')
+      )
+    ].join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="backup_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+    
+  } catch (error) {
+    console.error('Backup error:', error);
+    res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
+// Export customers
+app.get('/api/export/customers', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        customer_name,
+        country,
+        city,
+        COUNT(*) as total_orders,
+        SUM(quantity) as total_quantity,
+        SUM(total) as total_revenue,
+        MAX(order_date) as last_order
+      FROM records
+      GROUP BY customer_name, country, city
+      ORDER BY customer_name
+    `);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No customers to export' });
+    }
+    
+    // Create CSV content
+    const csv = [
+      'Customer Name,Country,City,Total Orders,Total Quantity,Total Revenue,Last Order',
+      ...result.rows.map(row => 
+        [
+          `"${row.customer_name || ''}"`,
+          `"${row.country || ''}"`,
+          `"${row.city || ''}"`,
+          row.total_orders || 0,
+          row.total_quantity || 0,
+          row.total_revenue || 0,
+          row.last_order ? new Date(row.last_order).toISOString().split('T')[0] : ''
+        ].join(',')
+      )
+    ].join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="customers_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+    
+  } catch (error) {
+    console.error('Export customers error:', error);
+    res.status(500).json({ error: 'Failed to export customers' });
+  }
+});
+
+// Clear all records (danger zone)
+app.post('/api/settings/clear-records', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM records');
+    console.log(`Cleared ${result.rowCount} records from database`);
+    
+    // Reset sequence
+    await pool.query('ALTER SEQUENCE records_id_seq RESTART WITH 1');
+    
+    res.json({ success: true, message: `Cleared ${result.rowCount} records` });
+  } catch (error) {
+    console.error('Clear records error:', error);
+    res.status(500).json({ error: 'Failed to clear records' });
+  }
+});
+
+// Reset all exclusions
+app.post('/api/settings/reset-exclusions', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM customer_exclusions');
+    console.log(`Reset ${result.rowCount} customer exclusions`);
+    
+    // Reset sequence
+    await pool.query('ALTER SEQUENCE customer_exclusions_id_seq RESTART WITH 1');
+    
+    res.json({ success: true, message: `Reset ${result.rowCount} exclusions` });
+  } catch (error) {
+    console.error('Reset exclusions error:', error);
+    res.status(500).json({ error: 'Failed to reset exclusions' });
+  }
+});
+
+// Clear upload history
+app.post('/api/settings/clear-upload-history', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM upload_log');
+    console.log(`Cleared ${result.rowCount} upload history records`);
+    
+    // Reset sequence
+    await pool.query('ALTER SEQUENCE upload_log_id_seq RESTART WITH 1');
+    
+    res.json({ success: true, message: `Cleared ${result.rowCount} upload records` });
+  } catch (error) {
+    console.error('Clear upload history error:', error);
+    res.status(500).json({ error: 'Failed to clear upload history' });
   }
 });
 
