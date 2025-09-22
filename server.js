@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const { Pool } = require('pg');
 const path = require('path');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const app = express();
@@ -141,6 +142,35 @@ async function initDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Create users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(255),
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'viewer',
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create default admin user if no users exist
+    try {
+      const userCount = await pool.query('SELECT COUNT(*) FROM users');
+      if (parseInt(userCount.rows[0].count) === 0) {
+        const defaultPassword = await bcrypt.hash('admin123', 10);
+        await pool.query(
+          'INSERT INTO users (username, email, password_hash, role, active) VALUES ($1, $2, $3, $4, $5)',
+          ['admin', 'admin@antennebooks.com', defaultPassword, 'admin', true]
+        );
+        console.log('Default admin user created (username: admin, password: admin123)');
+      }
+    } catch (bcryptError) {
+      console.log('Error creating default user:', bcryptError.message);
+    }
     
     console.log('Database initialized successfully');
   } catch (error) {
@@ -1313,6 +1343,244 @@ app.post('/api/settings/clear-upload-history', async (req, res) => {
   } catch (error) {
     console.error('Clear upload history error:', error);
     res.status(500).json({ error: 'Failed to clear upload history' });
+  }
+});
+
+// ============================================
+// USER MANAGEMENT ROUTES
+// ============================================
+
+// Get all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, username, email, role, active, created_at FROM users ORDER BY id'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get single user
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT id, username, email, role, active, created_at FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// Create new user
+app.post('/api/users', async (req, res) => {
+  try {
+    const { username, email, password, role, active } = req.body;
+    
+    // Validate required fields
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    // Check if username already exists
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE username = $1',
+      [username]
+    );
+    
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+    
+    // Insert new user
+    const result = await pool.query(
+      'INSERT INTO users (username, email, password_hash, role, active) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, role, active, created_at',
+      [username, email || null, passwordHash, role || 'viewer', active !== false]
+    );
+    
+    console.log(`User created: ${username}`);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Update user
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, password, role, active } = req.body;
+    
+    // Check if user exists
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (existingUser.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Check if new username conflicts with another user
+    if (username) {
+      const usernameCheck = await pool.query(
+        'SELECT id FROM users WHERE username = $1 AND id != $2',
+        [username, id]
+      );
+      
+      if (usernameCheck.rows.length > 0) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+    }
+    
+    // Build update query
+    let updateFields = [];
+    let values = [];
+    let paramCount = 1;
+    
+    if (username) {
+      updateFields.push(`username = $${paramCount}`);
+      values.push(username);
+      paramCount++;
+    }
+    
+    if (email !== undefined) {
+      updateFields.push(`email = $${paramCount}`);
+      values.push(email || null);
+      paramCount++;
+    }
+    
+    if (password) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      updateFields.push(`password_hash = $${paramCount}`);
+      values.push(passwordHash);
+      paramCount++;
+    }
+    
+    if (role !== undefined) {
+      updateFields.push(`role = $${paramCount}`);
+      values.push(role);
+      paramCount++;
+    }
+    
+    if (active !== undefined) {
+      updateFields.push(`active = $${paramCount}`);
+      values.push(active);
+      paramCount++;
+    }
+    
+    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+    
+    values.push(id);
+    
+    const query = `
+      UPDATE users 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, username, email, role, active, created_at
+    `;
+    
+    const result = await pool.query(query, values);
+    
+    console.log(`User updated: ${result.rows[0].username}`);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// Delete user
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Don't allow deleting the last admin user
+    const adminCount = await pool.query(
+      'SELECT COUNT(*) FROM users WHERE role = $1 AND id != $2',
+      ['admin', id]
+    );
+    
+    const userToDelete = await pool.query(
+      'SELECT role, username FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (userToDelete.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (userToDelete.rows[0].role === 'admin' && parseInt(adminCount.rows[0].count) === 0) {
+      return res.status(400).json({ error: 'Cannot delete the last admin user' });
+    }
+    
+    // Delete the user
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    
+    console.log(`User deleted: ${userToDelete.rows[0].username}`);
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Verify user credentials (for login - optional, for future use)
+app.post('/api/users/verify', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    const result = await pool.query(
+      'SELECT id, username, email, password_hash, role, active FROM users WHERE username = $1',
+      [username]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const user = result.rows[0];
+    
+    if (!user.active) {
+      return res.status(401).json({ error: 'Account is inactive' });
+    }
+    
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Return user info without password
+    res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      active: user.active
+    });
+  } catch (error) {
+    console.error('Error verifying user:', error);
+    res.status(500).json({ error: 'Failed to verify credentials' });
   }
 });
 
