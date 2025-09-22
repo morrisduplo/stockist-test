@@ -34,294 +34,483 @@ app.use(express.urlencoded({ extended: true }));
 // Configure multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// Initialize database tables
+// Customer name mappings configuration
+const customerNameMappings = {
+    'ANTENNE - DIRECT UK': 'Antenne Online UK',
+    'ANTENNE DIRECT': 'Antenne Online',
+    'GARDNERS THE BOOK WHOLESALER': 'Gardners',
+    'ANTENNE BOOKS - DIRECT': 'Antenne Direct',
+    'KOENIG BOOKS LTD': 'Koenig Books',
+    'ANTENNE - EXPORT': 'Antenne Export',
+    'FISHPOND WORLD LTD': 'Fishpond',
+    'NEWS AND COFFEE LTD': 'News and Coffee',
+    'BOOKS ETC. LTD (INTERNET SITE)': 'Books Etc Online',
+    'WHITE CUBE LIMITED': 'White Cube',
+    'ISSUES MAGAZINE SHOP': 'Issues Shop',
+    'ATHENAEUM BOEKHANDEL BV': 'Athenaeum',
+    'UNITOM UNIVERSAL TOMORROW LTD': 'Unitom',
+    'THE AFFAIRS CIRCULATION LTD': 'The Affairs',
+    'PBSHOP.CO.UK LIMITED': 'PB Shop',
+    'COEN SLIGTING BOOKIMPORT BV': 'Coen Sligting'
+};
+
 // Initialize database tables
 async function initDatabase() {
     try {
-        // Create tables if they don't exist
+        console.log('Starting database initialization...');
+        
+        // Create records table
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS stockist_data (
+            CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
-                customer_name TEXT,
-                display_name TEXT,
-                location TEXT,
-                quantity INTEGER,
-                order_date TEXT,
-                order_reference TEXT UNIQUE,
-                item_name TEXT,
-                variant_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                order_date DATE,
+                customer_name VARCHAR(500),
+                title VARCHAR(500),
+                book_ean VARCHAR(50),
+                quantity INTEGER DEFAULT 0,
+                total DECIMAL(10,2) DEFAULT 0,
+                country VARCHAR(100) DEFAULT 'Unknown',
+                city VARCHAR(100) DEFAULT 'Unknown',
+                order_reference VARCHAR(200),
+                line_identifier VARCHAR(200),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(order_reference, line_identifier)
             )
         `);
 
+        // Create upload_log table
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS customer_mappings (
+            CREATE TABLE IF NOT EXISTS upload_log (
                 id SERIAL PRIMARY KEY,
-                original_name TEXT UNIQUE,
-                display_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                filename VARCHAR(500),
+                records_count INTEGER DEFAULT 0,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
+        // Create customer_exclusions table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS customer_exclusions (
+                id SERIAL PRIMARY KEY,
+                customer_name VARCHAR(500) UNIQUE,
+                excluded BOOLEAN DEFAULT true,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Create users table with correct structure
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
-                username TEXT UNIQUE,
-                email TEXT UNIQUE,
-                password TEXT,
-                role TEXT DEFAULT 'viewer',
+                username VARCHAR(100) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) DEFAULT 'editor',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
         `);
 
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS settings (
-                id SERIAL PRIMARY KEY,
-                key TEXT UNIQUE,
-                value TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS excluded_customers (
-                id SERIAL PRIMARY KEY,
-                customer_name TEXT UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
         // Create indexes for better performance
-        await pool.query(`CREATE INDEX IF NOT EXISTS idx_stockist_customer ON stockist_data(customer_name)`);
-        await pool.query(`CREATE INDEX IF NOT EXISTS idx_stockist_order_ref ON stockist_data(order_reference)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_customer ON records(customer_name)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_order_ref ON records(order_reference)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_date ON records(order_date)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_exclusions ON customer_exclusions(customer_name)`);
 
-        // FORCE CREATE ADMIN USER - DELETE ANY EXISTING AND RECREATE
-        console.log('Checking for admin user...');
+        console.log('Database tables created successfully');
         
-        // First, delete any existing admin user
-        await pool.query("DELETE FROM users WHERE username = 'admin'");
+        // Check if admin user exists
+        const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
         
-        // Now create fresh admin user
-        const defaultPassword = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
-        await pool.query(
-            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
-            ['admin', 'admin@antennebooks.com', defaultPassword, 'admin']
-        );
+        if (adminCheck.rows.length === 0) {
+            console.log('Creating admin user...');
+            
+            // Create admin user with password 'admin123'
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            
+            await pool.query(
+                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+                ['admin', 'admin@antennebooks.com', hashedPassword, 'admin']
+            );
+            
+            console.log('=================================');
+            console.log('Admin user created successfully!');
+            console.log('Username: admin');
+            console.log('Password: admin123');
+            console.log('=================================');
+        } else {
+            console.log('Admin user already exists');
+            
+            // Reset admin password to ensure it works
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            await pool.query(
+                'UPDATE users SET password = $1 WHERE username = $2',
+                [hashedPassword, 'admin']
+            );
+            console.log('Admin password has been reset to: admin123');
+        }
         
-        console.log('Admin user created/reset successfully!');
-        console.log('Username: admin');
-        console.log('Password: admin123');
-
-        console.log('Database tables initialized successfully');
     } catch (err) {
         console.error('Error initializing database:', err);
+        throw err;
     }
 }
+
 // Initialize database on startup
-initDatabase();
+initDatabase().catch(err => {
+    console.error('Failed to initialize database:', err);
+});
 
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Authentication endpoint - FIXED
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    console.log('Login attempt for username:', username);
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    try {
+        const result = await pool.query(
+            'SELECT * FROM users WHERE username = $1 OR email = $1',
+            [username]
+        );
+
+        console.log('Found users:', result.rows.length);
+
+        if (result.rows.length === 0) {
+            console.log('No user found with username:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const user = result.rows[0];
+        console.log('User found:', user.username, 'Role:', user.role);
+        
+        const validPassword = await bcrypt.compare(password, user.password);
+        console.log('Password valid:', validPassword);
+        
+        if (!validPassword) {
+            console.log('Invalid password for user:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Update last login
+        await pool.query(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
+            [user.id]
+        );
+
+        console.log('Login successful for:', username);
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('Login database error:', err);
+        res.status(500).json({ error: 'Database error during login' });
+    }
+});
+
 // Upload endpoint
-app.post('/upload', upload.single('file'), async (req, res) => {
+app.post('/upload', upload.single('excelFile'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const filePath = req.file.path;
-    let successCount = 0;
-    let errorCount = 0;
-    let duplicateCount = 0;
+    const dataType = req.body.dataType || 'gazelle';
+    console.log('Processing file:', req.file.originalname, 'Type:', dataType);
 
     try {
-        if (req.file.originalname.endsWith('.xlsx') || req.file.originalname.endsWith('.xls')) {
-            // Handle Excel files (Gazelle format)
-            const workbook = xlsx.readFile(filePath);
+        let recordsProcessed = 0;
+        let duplicatesSkipped = 0;
+
+        if (dataType === 'shopify' || req.file.originalname.toLowerCase().endsWith('.csv')) {
+            // Process CSV file (Shopify format)
+            const results = [];
+            const stream = fs.createReadStream(req.file.path)
+                .pipe(csv())
+                .on('data', (data) => results.push(data))
+                .on('end', async () => {
+                    for (const row of results) {
+                        const orderReference = row['Name'] || row['Order Name'] || '';
+                        const lineItem = row['Lineitem name'] || '';
+                        
+                        if (orderReference) {
+                            const lineIdentifier = `${orderReference}_${lineItem}`;
+                            
+                            try {
+                                const insertResult = await pool.query(
+                                    `INSERT INTO records 
+                                    (order_date, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) 
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                    ON CONFLICT (order_reference, line_identifier) DO NOTHING
+                                    RETURNING id`,
+                                    [
+                                        row['Created at'] || null,
+                                        applyMapping(row['Shipping Name'] || 'Unknown'),
+                                        row['Lineitem name'] || '',
+                                        row['Lineitem sku'] || '',
+                                        parseInt(row['Lineitem quantity']) || 0,
+                                        parseFloat(row['Lineitem price']) || 0,
+                                        'Unknown',
+                                        'Unknown',
+                                        orderReference,
+                                        lineIdentifier
+                                    ]
+                                );
+                                
+                                if (insertResult.rows.length > 0) {
+                                    recordsProcessed++;
+                                } else {
+                                    duplicatesSkipped++;
+                                }
+                            } catch (err) {
+                                console.error('Error inserting CSV row:', err);
+                            }
+                        }
+                    }
+                    
+                    await logUpload(req.file.originalname, recordsProcessed);
+                    fs.unlinkSync(req.file.path);
+                    
+                    res.json({ 
+                        success: true, 
+                        message: `Uploaded ${recordsProcessed} records, ${duplicatesSkipped} duplicates skipped`,
+                        inserted: recordsProcessed,
+                        skipped: duplicatesSkipped
+                    });
+                });
+        } else {
+            // Process Excel file (Gazelle format)
+            const workbook = xlsx.readFile(req.file.path);
             const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            const data = xlsx.utils.sheet_to_json(sheet);
+            const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
             for (const row of data) {
-                const customer = row['Customer'] || row['customer'] || '';
-                const quantity = parseInt(row['Total Quantity'] || row['Quantity'] || row['quantity'] || 0);
-                const orderDate = row['Order Date'] || row['Date'] || '';
-                const orderRef = row['Order Reference'] || row['Reference'] || row['Order #'] || '';
-                const itemName = row['Item Name'] || row['Product'] || '';
-                const variantName = row['Variant Name'] || row['Variant'] || '';
-
-                if (customer && orderRef) {
+                const orderReference = row['Invoice'] || row['Order Reference'] || '';
+                const productTitle = row['Title'] || '';
+                
+                if (orderReference) {
+                    const lineIdentifier = `${orderReference}_${productTitle}`;
+                    
                     try {
-                        // Get display name from mappings
-                        const mappingResult = await pool.query(
-                            'SELECT display_name FROM customer_mappings WHERE original_name = $1',
-                            [customer]
-                        );
-                        const displayName = mappingResult.rows[0]?.display_name || customer;
-
-                        // Insert or ignore if duplicate
                         const insertResult = await pool.query(
-                            `INSERT INTO stockist_data 
-                            (customer_name, display_name, quantity, order_date, order_reference, item_name, variant_name) 
-                            VALUES ($1, $2, $3, $4, $5, $6, $7)
-                            ON CONFLICT (order_reference) DO NOTHING
+                            `INSERT INTO records 
+                            (order_date, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) 
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            ON CONFLICT (order_reference, line_identifier) DO NOTHING
                             RETURNING id`,
-                            [customer, displayName, quantity, orderDate, orderRef, itemName, variantName]
+                            [
+                                row['Date'] || null,
+                                applyMapping(row['Customer'] || 'Unknown'),
+                                productTitle,
+                                row['ISBN'] || row['EAN'] || '',
+                                parseInt(row['Quantity']) || parseInt(row['Qty']) || 0,
+                                parseFloat(row['Total']) || parseFloat(row['Amount']) || 0,
+                                'Unknown',
+                                'Unknown',
+                                orderReference,
+                                lineIdentifier
+                            ]
                         );
-
+                        
                         if (insertResult.rows.length > 0) {
-                            successCount++;
+                            recordsProcessed++;
                         } else {
-                            duplicateCount++;
+                            duplicatesSkipped++;
                         }
-                    } catch (error) {
-                        console.error('Error inserting record:', error);
-                        errorCount++;
+                    } catch (err) {
+                        console.error('Error inserting Excel row:', err);
                     }
                 }
             }
-        } else {
-            // Handle CSV files (Shopify format)
-            const results = [];
-            await new Promise((resolve, reject) => {
-                fs.createReadStream(filePath)
-                    .pipe(csv())
-                    .on('data', (data) => results.push(data))
-                    .on('end', () => resolve())
-                    .on('error', reject);
+
+            await logUpload(req.file.originalname, recordsProcessed);
+            fs.unlinkSync(req.file.path);
+            
+            res.json({ 
+                success: true, 
+                message: `Uploaded ${recordsProcessed} records, ${duplicatesSkipped} duplicates skipped`,
+                inserted: recordsProcessed,
+                skipped: duplicatesSkipped
             });
-
-            for (const row of results) {
-                const customer = row['Shipping Name'] || row['Customer'] || '';
-                const quantity = parseInt(row['Lineitem quantity'] || row['Quantity'] || 0);
-                const orderDate = row['Created at'] || row['Date'] || '';
-                const orderRef = row['Name'] || row['Order'] || '';
-                const itemName = row['Lineitem name'] || row['Product'] || '';
-                const variantName = row['Lineitem variant'] || '';
-                const location = row['Shipping City'] || row['Shipping Town/City'] || '';
-
-                if (customer && orderRef) {
-                    try {
-                        // Get display name from mappings
-                        const mappingResult = await pool.query(
-                            'SELECT display_name FROM customer_mappings WHERE original_name = $1',
-                            [customer]
-                        );
-                        const displayName = mappingResult.rows[0]?.display_name || customer;
-
-                        // Insert or ignore if duplicate
-                        const insertResult = await pool.query(
-                            `INSERT INTO stockist_data 
-                            (customer_name, display_name, location, quantity, order_date, order_reference, item_name, variant_name) 
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                            ON CONFLICT (order_reference) DO NOTHING
-                            RETURNING id`,
-                            [customer, displayName, location, quantity, orderDate, orderRef, itemName, variantName]
-                        );
-
-                        if (insertResult.rows.length > 0) {
-                            successCount++;
-                        } else {
-                            duplicateCount++;
-                        }
-                    } catch (error) {
-                        console.error('Error inserting record:', error);
-                        errorCount++;
-                    }
-                }
-            }
         }
-
-        // Clean up uploaded file
-        fs.unlinkSync(filePath);
-
-        res.json({
-            success: true,
-            message: `Upload complete. ${successCount} records added, ${duplicateCount} duplicates skipped, ${errorCount} errors.`,
-            stats: { success: successCount, duplicates: duplicateCount, errors: errorCount }
-        });
-
     } catch (error) {
         console.error('Upload error:', error);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
         }
-        res.status(500).json({ error: 'Failed to process file: ' + error.message });
+        res.status(500).json({ error: error.message });
     }
 });
 
-// Get customers endpoint
-app.get('/api/customers', async (req, res) => {
-    const search = req.query.search || '';
-    const excluded = req.query.excluded === 'true';
+// Helper function to apply customer name mapping
+function applyMapping(customerName) {
+    return customerNameMappings[customerName] || customerName;
+}
+
+// Helper function to log uploads
+async function logUpload(filename, recordCount) {
+    try {
+        await pool.query(
+            'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
+            [filename, recordCount]
+        );
+    } catch (err) {
+        console.error('Error logging upload:', err);
+    }
+}
+
+// Get records with pagination
+app.get('/records', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 500;
+    const offset = (page - 1) * limit;
 
     try {
-        let query = `
-            SELECT DISTINCT 
-                COALESCE(sd.display_name, sd.customer_name) as display_name,
-                sd.customer_name,
-                sd.location,
-                COUNT(*) as order_count,
-                SUM(sd.quantity) as total_quantity,
-                CASE WHEN ec.customer_name IS NOT NULL THEN 1 ELSE 0 END as is_excluded
-            FROM stockist_data sd
-            LEFT JOIN excluded_customers ec ON sd.customer_name = ec.customer_name
-        `;
+        // Get total count
+        const countResult = await pool.query('SELECT COUNT(*) FROM records');
+        const totalRecords = parseInt(countResult.rows[0].count);
+        const totalPages = Math.ceil(totalRecords / limit);
 
-        const params = [];
-        let paramIndex = 1;
+        // Get records for current page
+        const result = await pool.query(
+            'SELECT * FROM records ORDER BY id DESC LIMIT $1 OFFSET $2',
+            [limit, offset]
+        );
 
-        if (search) {
-            query += ` WHERE (sd.customer_name ILIKE $${paramIndex} OR sd.display_name ILIKE $${paramIndex + 1} OR sd.location ILIKE $${paramIndex + 2})`;
-            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
-            paramIndex += 3;
-        }
+        res.json({
+            records: result.rows,
+            pagination: {
+                currentPage: page,
+                totalPages: totalPages,
+                totalRecords: totalRecords,
+                recordsPerPage: limit,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1,
+                recordsOnThisPage: result.rows.length
+            }
+        });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
-        query += ` GROUP BY sd.customer_name, sd.display_name, sd.location, ec.customer_name`;
-
-        if (!excluded) {
-            query = `SELECT * FROM (${query}) AS subquery WHERE is_excluded = 0`;
-        }
-
-        query += ` ORDER BY display_name`;
-
-        const result = await pool.query(query, params);
+// Get upload log
+app.get('/upload-log', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM upload_log ORDER BY upload_date DESC LIMIT 20');
         res.json(result.rows);
     } catch (err) {
         console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error: ' + err.message });
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Get customers
+app.get('/api/customers', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                customer_name,
+                country,
+                city,
+                COUNT(*) as total_orders,
+                SUM(quantity) as total_quantity,
+                SUM(total) as total_revenue,
+                MAX(order_date) as last_order,
+                CASE WHEN ce.excluded = true THEN true ELSE false END as excluded
+            FROM records r
+            LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+            GROUP BY r.customer_name, r.country, r.city, ce.excluded
+            ORDER BY customer_name
+        `);
+
+        const stats = await pool.query(`
+            SELECT 
+                COUNT(DISTINCT customer_name) as total_customers,
+                COUNT(DISTINCT country) as total_countries,
+                COUNT(*) as total_orders
+            FROM records
+        `);
+
+        res.json({
+            customers: result.rows,
+            stats: stats.rows[0]
+        });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
     }
 });
 
 // Update customer location
-app.put('/api/customers/:name/location', async (req, res) => {
-    const { name } = req.params;
-    const { location } = req.body;
+app.post('/api/customers/update', async (req, res) => {
+    const { customerName, field, value } = req.body;
 
     try {
-        const result = await pool.query(
-            'UPDATE stockist_data SET location = $1 WHERE customer_name = $2',
-            [location, name]
-        );
-        res.json({ success: true, changes: result.rowCount });
+        if (field === 'country' || field === 'city') {
+            await pool.query(
+                `UPDATE records SET ${field} = $1 WHERE customer_name = $2`,
+                [value, customerName]
+            );
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ error: 'Invalid field' });
+        }
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
     }
 });
 
-// Exclude/include customer
-app.post('/api/customers/:name/exclude', async (req, res) => {
-    const { name } = req.params;
+// Bulk update customer locations
+app.post('/api/customers/bulk-update', async (req, res) => {
+    const { updates } = req.body;
+    let updatedCount = 0;
 
     try {
-        await pool.query(
-            'INSERT INTO excluded_customers (customer_name) VALUES ($1) ON CONFLICT (customer_name) DO NOTHING',
-            [name]
-        );
+        for (const update of updates) {
+            const result = await pool.query(
+                'UPDATE records SET country = $1, city = $2 WHERE customer_name = $3',
+                [update.country, update.city, update.customerName]
+            );
+            updatedCount += result.rowCount;
+        }
+        res.json({ success: true, updated: updatedCount });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Exclude/Include customers
+app.post('/api/customers/exclude', async (req, res) => {
+    const { customers, excluded } = req.body;
+
+    try {
+        for (const customerName of customers) {
+            await pool.query(
+                `INSERT INTO customer_exclusions (customer_name, excluded) 
+                 VALUES ($1, $2) 
+                 ON CONFLICT (customer_name) 
+                 DO UPDATE SET excluded = $2, updated_at = CURRENT_TIMESTAMP`,
+                [customerName, excluded]
+            );
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Database error:', err);
@@ -329,31 +518,13 @@ app.post('/api/customers/:name/exclude', async (req, res) => {
     }
 });
 
-app.delete('/api/customers/:name/exclude', async (req, res) => {
-    const { name } = req.params;
-
-    try {
-        await pool.query(
-            'DELETE FROM excluded_customers WHERE customer_name = $1',
-            [name]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-// Get unique titles
+// Get titles for autocomplete
 app.get('/api/titles', async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT DISTINCT item_name 
-             FROM stockist_data 
-             WHERE item_name IS NOT NULL AND item_name != '' 
-             ORDER BY item_name`
+            'SELECT DISTINCT title FROM records WHERE title IS NOT NULL ORDER BY title'
         );
-        res.json(result.rows.map(row => row.item_name));
+        res.json(result.rows);
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
@@ -362,242 +533,54 @@ app.get('/api/titles', async (req, res) => {
 
 // Generate report
 app.post('/api/generate-report', async (req, res) => {
-    const { titles, startDate, endDate, excludeNoLocation } = req.body;
-
     try {
-        let query = `
+        const { publisher, startDate, endDate, titles } = req.body;
+        
+        console.log('Generate report request:', { publisher, startDate, endDate, titlesCount: titles.length });
+        
+        if (!publisher || !startDate || !endDate || !titles || titles.length === 0) {
+            return res.status(400).json({ error: 'Missing required parameters' });
+        }
+        
+        const query = `
             SELECT 
-                COALESCE(sd.display_name, sd.customer_name) as customer_name,
-                sd.location,
-                sd.item_name,
-                sd.variant_name,
-                SUM(sd.quantity) as total_quantity,
-                COUNT(DISTINCT sd.order_reference) as order_count
-            FROM stockist_data sd
-            LEFT JOIN excluded_customers ec ON sd.customer_name = ec.customer_name
-            WHERE ec.customer_name IS NULL
+                r.customer_name,
+                r.country,
+                r.city,
+                COUNT(*) as total_orders,
+                SUM(r.quantity) as total_quantity,
+                SUM(r.total) as total_revenue,
+                MAX(r.order_date) as last_order
+            FROM records r
+            LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+            WHERE r.order_date >= $1 
+            AND r.order_date <= $2
+            AND r.title = ANY($3::text[])
+            AND COALESCE(ce.excluded, false) = false
+            GROUP BY r.customer_name, r.country, r.city
+            ORDER BY total_revenue DESC
         `;
-
-        const params = [];
-        let paramIndex = 1;
-
-        if (titles && titles.length > 0) {
-            const placeholders = titles.map((_, i) => `$${paramIndex + i}`).join(',');
-            query += ` AND sd.item_name IN (${placeholders})`;
-            params.push(...titles);
-            paramIndex += titles.length;
-        }
-
-        if (startDate) {
-            query += ` AND sd.order_date::date >= $${paramIndex}::date`;
-            params.push(startDate);
-            paramIndex++;
-        }
-
-        if (endDate) {
-            query += ` AND sd.order_date::date <= $${paramIndex}::date`;
-            params.push(endDate);
-            paramIndex++;
-        }
-
-        if (excludeNoLocation) {
-            query += ` AND sd.location IS NOT NULL AND sd.location != ''`;
-        }
-
-        query += ` GROUP BY sd.customer_name, sd.display_name, sd.location, sd.item_name, sd.variant_name
-                   ORDER BY customer_name, sd.item_name`;
-
+        
+        const params = [startDate, endDate, titles];
+        
+        console.log('Executing query with params:', { startDate, endDate, titlesCount: titles.length });
+        
         const result = await pool.query(query, params);
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error: ' + err.message });
-    }
-});
-
-// Customer name mappings endpoints
-app.get('/api/mappings', async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT * FROM customer_mappings ORDER BY original_name'
-        );
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.post('/api/mappings', async (req, res) => {
-    const { original_name, display_name } = req.body;
-
-    if (!original_name || !display_name) {
-        return res.status(400).json({ error: 'Both original_name and display_name are required' });
-    }
-
-    try {
-        const result = await pool.query(
-            `INSERT INTO customer_mappings (original_name, display_name) 
-             VALUES ($1, $2) 
-             ON CONFLICT (original_name) 
-             DO UPDATE SET display_name = $2
-             RETURNING id`,
-            [original_name, display_name]
-        );
-
-        // Update existing records with the new display name
-        await pool.query(
-            'UPDATE stockist_data SET display_name = $1 WHERE customer_name = $2',
-            [display_name, original_name]
-        );
-
-        res.json({ success: true, id: result.rows[0].id });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.delete('/api/mappings/:id', async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        // First get the mapping to know which records to update
-        const mappingResult = await pool.query(
-            'SELECT original_name FROM customer_mappings WHERE id = $1',
-            [id]
-        );
-
-        if (mappingResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Mapping not found' });
-        }
-
-        const originalName = mappingResult.rows[0].original_name;
-
-        // Delete the mapping
-        await pool.query('DELETE FROM customer_mappings WHERE id = $1', [id]);
-
-        // Reset display names to original names
-        await pool.query(
-            'UPDATE stockist_data SET display_name = customer_name WHERE customer_name = $1',
-            [originalName]
-        );
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-// Data management endpoints
-app.get('/api/stats', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT 
-                COUNT(*) as total_records,
-                COUNT(DISTINCT customer_name) as total_customers,
-                COUNT(DISTINCT item_name) as total_titles
-            FROM stockist_data
-        `);
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.get('/api/export-all', async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT * FROM stockist_data ORDER BY order_date DESC'
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'No data to export' });
-        }
-
-        // Convert to CSV
-        const headers = Object.keys(result.rows[0]).join(',');
-        const csvData = result.rows.map(row => 
-            Object.values(row).map(val => 
-                typeof val === 'string' && val.includes(',') ? `"${val}"` : val
-            ).join(',')
-        ).join('\n');
         
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename=stockist_data.csv');
-        res.send(headers + '\n' + csvData);
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.post('/api/backup', async (req, res) => {
-    // PostgreSQL backup would require pg_dump which is complex in this environment
-    // For now, we'll export all data as JSON
-    try {
-        const tables = ['stockist_data', 'customer_mappings', 'users', 'settings', 'excluded_customers'];
-        const backup = {};
-
-        for (const table of tables) {
-            const result = await pool.query(`SELECT * FROM ${table}`);
-            backup[table] = result.rows;
-        }
-
-        const backupFile = `backup_${Date.now()}.json`;
-        const backupPath = path.join(__dirname, 'backups', backupFile);
+        console.log(`Report generated: ${result.rows.length} customers found`);
         
-        if (!fs.existsSync(path.join(__dirname, 'backups'))) {
-            fs.mkdirSync(path.join(__dirname, 'backups'));
-        }
-
-        fs.writeFileSync(backupPath, JSON.stringify(backup, null, 2));
-        res.json({ success: true, backup: backupFile });
-    } catch (err) {
-        console.error('Backup error:', err);
-        res.status(500).json({ error: 'Backup failed' });
-    }
-});
-
-app.delete('/api/clear-data', async (req, res) => {
-    try {
-        const result = await pool.query('DELETE FROM stockist_data');
-        res.json({ success: true, deleted: result.rowCount });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.delete('/api/remove-old-records', async (req, res) => {
-    try {
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        res.json({
+            data: result.rows,
+            totalCustomers: result.rows.length,
+            publisher: publisher,
+            startDate: startDate,
+            endDate: endDate,
+            titles: titles
+        });
         
-        const result = await pool.query(
-            'DELETE FROM stockist_data WHERE order_date::date < $1::date',
-            [sixMonthsAgo.toISOString()]
-        );
-        res.json({ success: true, deleted_count: result.rowCount });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.post('/api/merge-duplicates', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            UPDATE stockist_data 
-            SET display_name = customer_name 
-            WHERE display_name IS NULL OR display_name = ''
-        `);
-        res.json({ success: true, merged_count: result.rowCount });
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
+    } catch (error) {
+        console.error('Generate report error:', error);
+        res.status(500).json({ error: 'Failed to generate report: ' + error.message });
     }
 });
 
@@ -608,26 +591,6 @@ app.get('/api/users', async (req, res) => {
             'SELECT id, username, email, role, created_at, last_login FROM users ORDER BY id'
         );
         res.json(result.rows);
-    } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-app.get('/api/users/:id', async (req, res) => {
-    const { id } = req.params;
-    
-    try {
-        const result = await pool.query(
-            'SELECT id, username, email, role, created_at, last_login FROM users WHERE id = $1',
-            [id]
-        );
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-        
-        res.json(result.rows[0]);
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
@@ -645,11 +608,11 @@ app.post('/api/users', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await pool.query(
             'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id',
-            [username, email, hashedPassword, role || 'viewer']
+            [username, email, hashedPassword, role || 'editor']
         );
         res.json({ success: true, id: result.rows[0].id });
     } catch (err) {
-        if (err.code === '23505') { // Unique violation
+        if (err.code === '23505') {
             res.status(400).json({ error: 'Username or email already exists' });
         } else {
             console.error('Database error:', err);
@@ -685,7 +648,7 @@ app.put('/api/users/:id', async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        if (err.code === '23505') { // Unique violation
+        if (err.code === '23505') {
             res.status(400).json({ error: 'Username or email already exists' });
         } else {
             console.error('Database error:', err);
@@ -698,7 +661,6 @@ app.delete('/api/users/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Check if this is the last admin
         const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
         if (userResult.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
@@ -715,12 +677,7 @@ app.delete('/api/users/:id', async (req, res) => {
             }
         }
 
-        const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
-        
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
+        await pool.query('DELETE FROM users WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
         console.error('Database error:', err);
@@ -728,64 +685,52 @@ app.delete('/api/users/:id', async (req, res) => {
     }
 });
 
-// Settings endpoints
-app.get('/api/settings', async (req, res) => {
+app.get('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    
     try {
-        const result = await pool.query('SELECT key, value FROM settings');
-        const settings = {};
-        result.rows.forEach(row => {
-            settings[row.key] = row.value;
-        });
-        res.json(settings);
+        const result = await pool.query(
+            'SELECT id, username, email, role, created_at, last_login FROM users WHERE id = $1',
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json(result.rows[0]);
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
     }
 });
 
-// Authentication endpoint
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
-
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password required' });
-    }
-
+// EMERGENCY: Force reset admin password
+app.get('/emergency-reset', async (req, res) => {
     try {
-        const result = await pool.query(
-            'SELECT * FROM users WHERE username = $1 OR email = $1',
-            [username]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-
-        const user = result.rows[0];
-        const validPassword = await bcrypt.compare(password, user.password);
+        const hashedPassword = await bcrypt.hash('admin123', 10);
         
-        if (!validPassword) {
-            return res.status(401).json({ error: 'Invalid credentials' });
+        // Check if admin exists
+        const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
+        
+        if (adminCheck.rows.length === 0) {
+            // Create admin user
+            await pool.query(
+                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+                ['admin', 'admin@antennebooks.com', hashedPassword, 'admin']
+            );
+            res.send('<h1>Admin user created!</h1><p>Username: admin<br>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
+        } else {
+            // Update admin password
+            await pool.query(
+                'UPDATE users SET password = $1 WHERE username = $2',
+                [hashedPassword, 'admin']
+            );
+            res.send('<h1>Admin password reset!</h1><p>Username: admin<br>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
         }
-
-        // Update last login
-        await pool.query(
-            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
-            [user.id]
-        );
-
-        res.json({
-            success: true,
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role
-            }
-        });
     } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
+        console.error('Reset error:', err);
+        res.status(500).send('<h1>Error</h1><pre>' + err.message + '</pre>');
     }
 });
 
@@ -808,93 +753,15 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// TEMPORARY: Reset admin password
-app.get('/reset-admin-password-temp', async (req, res) => {
-    try {
-        // This is the hash for 'admin123'
-        const passwordHash = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
-        
-        // Update the admin user's password
-        const result = await pool.query(
-            'UPDATE users SET password = $1 WHERE username = $2',
-            [passwordHash, 'admin']
-        );
-        
-        if (result.rowCount > 0) {
-            res.send('<h1>Success!</h1><p>Admin password has been reset to: admin123</p><p>Username: admin</p><p><a href="/login.html">Go to login</a></p>');
-        } else {
-            res.send('<h1>Error</h1><p>Admin user not found. Creating new admin user...</p>');
-            
-            // Create admin user if it doesn't exist
-            await pool.query(
-                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
-                ['admin', 'admin@antennebooks.com', passwordHash, 'admin']
-            );
-            
-            res.send('<h1>Success!</h1><p>Admin user created!</p><p>Username: admin</p><p>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
-        }
-    } catch (err) {
-        res.send(`<h1>Error</h1><p>${err.message}</p>`);
-    }
-});
-
-// TEMPORARY: Fix users table structure
-app.get('/fix-users-table-temp', async (req, res) => {
-    try {
-        // Drop the old users table if it exists
-        await pool.query('DROP TABLE IF EXISTS users CASCADE');
-        
-        // Create the users table with correct structure
-        await pool.query(`
-            CREATE TABLE users (
-                id SERIAL PRIMARY KEY,
-                username TEXT UNIQUE,
-                email TEXT UNIQUE,
-                password TEXT,
-                role TEXT DEFAULT 'viewer',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP
-            )
-        `);
-        
-        // Insert admin user with known password hash
-        const passwordHash = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
-        await pool.query(
-            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
-            ['admin', 'admin@antennebooks.com', passwordHash, 'admin']
-        );
-        
-        res.send(`
-            <html>
-                <body style="font-family: Arial; padding: 50px;">
-                    <h1 style="color: green;">✅ Success!</h1>
-                    <p>Users table has been fixed and admin user created!</p>
-                    <hr>
-                    <h3>Login credentials:</h3>
-                    <p><strong>Username:</strong> admin</p>
-                    <p><strong>Password:</strong> admin123</p>
-                    <hr>
-                    <p><a href="/login.html" style="padding: 10px 20px; background: #000; color: white; text-decoration: none; border-radius: 5px;">Go to Login Page</a></p>
-                </body>
-            </html>
-        `);
-    } catch (err) {
-        res.send(`
-            <html>
-                <body style="font-family: Arial; padding: 50px;">
-                    <h1 style="color: red;">Error</h1>
-                    <pre>${err.message}</pre>
-                    <p>${err.stack}</p>
-                </body>
-            </html>
-        `);
-    }
-});
-
 // Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Visit http://localhost:${PORT} to access the application`);
+    console.log('=================================');
+    console.log('IMPORTANT: Admin credentials');
+    console.log('Username: admin');
+    console.log('Password: admin123');
+    console.log('=================================');
 });
 
 // Graceful shutdown
