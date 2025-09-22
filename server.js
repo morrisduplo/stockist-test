@@ -161,12 +161,67 @@ initDatabase().catch(err => {
     console.error('Failed to initialize database:', err);
 });
 
-// Routes
+// Helper function to apply customer name mapping
+function applyMapping(customerName) {
+    return customerNameMappings[customerName] || customerName;
+}
+
+// Helper function to log uploads
+async function logUpload(filename, recordCount) {
+    try {
+        await pool.query(
+            'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
+            [filename, recordCount]
+        );
+    } catch (err) {
+        console.error('Error logging upload:', err);
+    }
+}
+
+// =============================================
+// PAGE ROUTES - THESE WERE MISSING!
+// =============================================
+
+// Home page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Authentication endpoint - FIXED
+// Upload page
+app.get('/upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'upload.html'));
+});
+
+// Customers page
+app.get('/customers', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'customers.html'));
+});
+
+// Reports page
+app.get('/reports', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+});
+
+// Settings page
+app.get('/settings', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
+// Login page (explicit route)
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Login page with .html extension
+app.get('/login.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// =============================================
+// API ROUTES
+// =============================================
+
+// Authentication endpoint
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -355,23 +410,6 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-// Helper function to apply customer name mapping
-function applyMapping(customerName) {
-    return customerNameMappings[customerName] || customerName;
-}
-
-// Helper function to log uploads
-async function logUpload(filename, recordCount) {
-    try {
-        await pool.query(
-            'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
-            [filename, recordCount]
-        );
-    } catch (err) {
-        console.error('Error logging upload:', err);
-    }
-}
 
 // Get records with pagination
 app.get('/records', async (req, res) => {
@@ -584,6 +622,64 @@ app.post('/api/generate-report', async (req, res) => {
     }
 });
 
+// Update record
+app.post('/api/update-record', async (req, res) => {
+    const { id, customer_name, country, city, title } = req.body;
+
+    try {
+        await pool.query(
+            'UPDATE records SET customer_name = $1, country = $2, city = $3, title = $4 WHERE id = $5',
+            [customer_name, country, city, title, id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Settings endpoints
+app.get('/api/mappings', async (req, res) => {
+    try {
+        const mappings = Object.entries(customerNameMappings).map(([original, display], index) => ({
+            id: index + 1,
+            original_name: original,
+            display_name: display
+        }));
+        res.json(mappings);
+    } catch (err) {
+        console.error('Error loading mappings:', err);
+        res.status(500).json({ error: 'Error loading mappings' });
+    }
+});
+
+app.post('/api/mappings', async (req, res) => {
+    const { original_name, display_name } = req.body;
+    customerNameMappings[original_name] = display_name;
+    res.json({ success: true });
+});
+
+app.delete('/api/mappings/:id', async (req, res) => {
+    // Note: This is a simplified version - in production you'd want to persist these
+    res.json({ success: true });
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT customer_name) as total_customers,
+                COUNT(DISTINCT title) as total_titles
+            FROM records
+        `);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 // User management endpoints
 app.get('/api/users', async (req, res) => {
     try {
@@ -703,6 +799,13 @@ app.get('/api/users/:id', async (req, res) => {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
     }
+});
+
+// Put settings
+app.put('/api/settings', async (req, res) => {
+    // In a production app, you'd save these settings to the database
+    console.log('Settings update:', req.body);
+    res.json({ success: true });
 });
 
 // EMERGENCY: Force reset admin password
