@@ -827,6 +827,35 @@ app.get('/health', async (req, res) => {
 });
 
 // Start server
+// TEMPORARY: Reset admin password
+app.get('/reset-admin-password-temp', async (req, res) => {
+    try {
+        // This is the hash for 'admin123'
+        const passwordHash = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
+        
+        // Update the admin user's password
+        const result = await pool.query(
+            'UPDATE users SET password = $1 WHERE username = $2',
+            [passwordHash, 'admin']
+        );
+        
+        if (result.rowCount > 0) {
+            res.send('<h1>Success!</h1><p>Admin password has been reset to: admin123</p><p>Username: admin</p><p><a href="/login.html">Go to login</a></p>');
+        } else {
+            res.send('<h1>Error</h1><p>Admin user not found. Creating new admin user...</p>');
+            
+            // Create admin user if it doesn't exist
+            await pool.query(
+                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+                ['admin', 'admin@antennebooks.com', passwordHash, 'admin']
+            );
+            
+            res.send('<h1>Success!</h1><p>Admin user created!</p><p>Username: admin</p><p>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
+        }
+    } catch (err) {
+        res.send(`<h1>Error</h1><p>${err.message}</p>`);
+    }
+});
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Visit http://localhost:${PORT} to access the application`);
