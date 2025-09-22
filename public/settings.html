@@ -97,6 +97,8 @@
         }
 
         .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="password"],
         .form-group input[type="number"],
         .form-group select {
             width: 100%;
@@ -424,6 +426,39 @@
             margin-bottom: 15px;
             font-size: 13px;
         }
+
+        /* User table styles */
+        .user-row td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .user-row:hover {
+            background-color: #f5f5f5;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -439,11 +474,11 @@
         <!-- Tab Navigation -->
         <div class="tab-container">
             <div class="tab-buttons">
-                <div class="tab-button active" onclick="switchTab('general')">General Settings</div>
-                <div class="tab-button" onclick="switchTab('mappings')">Customer Name Mappings</div>
-                <div class="tab-button" onclick="switchTab('data')">Data Management</div>
-                <div class="tab-button" onclick="switchTab('users')">Users</div>
-                <div class="tab-button" onclick="switchTab('advanced')">Advanced</div>
+                <div class="tab-button active" data-tab="general">General Settings</div>
+                <div class="tab-button" data-tab="mappings">Customer Name Mappings</div>
+                <div class="tab-button" data-tab="data">Data Management</div>
+                <div class="tab-button" data-tab="users">Users</div>
+                <div class="tab-button" data-tab="advanced">Advanced</div>
             </div>
 
             <!-- General Settings Tab -->
@@ -677,7 +712,7 @@
                                 <!-- Users will be loaded here -->
                             </tbody>
                         </table>
-                        <div id="noUsersMessage" class="no-data" style="display: none; text-align: center; padding: 40px; color: #7f8c8d;">
+                        <div id="noUsersMessage" class="no-data" style="display: none;">
                             No users found. Create your first user above.
                         </div>
                     </div>
@@ -738,8 +773,27 @@
         let users = [];
         let editingUserId = null;
 
-        // Tab switching
-        function switchTab(tabName) {
+        // Fixed Tab switching - using data attributes instead of event.target
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add click listeners to all tab buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    switchTab(tabName, this);
+                });
+            });
+            
+            // Load initial data
+            loadSettings();
+            loadUsers();
+            
+            // Add user form submit handler
+            document.getElementById('userForm').addEventListener('submit', handleUserSubmit);
+        });
+
+        // Fixed switchTab function
+        function switchTab(tabName, buttonElement) {
             // Hide all tabs
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
@@ -751,10 +805,15 @@
             });
             
             // Show selected tab
-            document.getElementById(`${tabName}-tab`).classList.add('active');
+            const tabElement = document.getElementById(`${tabName}-tab`);
+            if (tabElement) {
+                tabElement.classList.add('active');
+            }
             
             // Add active class to clicked button
-            event.target.classList.add('active');
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
         }
 
         // Show status message
@@ -1169,15 +1228,6 @@
             }
         }
 
-        // Load settings when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            loadSettings();
-            loadUsers();
-            
-            // Add user form submit handler
-            document.getElementById('userForm').addEventListener('submit', handleUserSubmit);
-        });
-
         // ============================================
         // USER MANAGEMENT FUNCTIONS
         // ============================================
@@ -1210,18 +1260,18 @@
             noUsersMessage.style.display = 'none';
             tbody.innerHTML = users.map(user => `
                 <tr class="user-row">
-                    <td style="padding: 12px;">${user.id}</td>
-                    <td style="padding: 12px; font-weight: bold;">${user.username}</td>
-                    <td style="padding: 12px;">${user.email || '-'}</td>
-                    <td style="padding: 12px;">
+                    <td>${user.id}</td>
+                    <td style="font-weight: bold;">${user.username}</td>
+                    <td>${user.email || '-'}</td>
+                    <td>
                         <span style="text-transform: capitalize;">${user.role || 'viewer'}</span>
                     </td>
-                    <td style="padding: 12px; text-align: center;">
+                    <td style="text-align: center;">
                         <span class="status-badge ${user.active ? 'status-active' : 'status-inactive'}">
                             ${user.active ? 'Active' : 'Inactive'}
                         </span>
                     </td>
-                    <td style="padding: 12px; text-align: center;">
+                    <td style="text-align: center;">
                         <button onclick="editUser(${user.id})" class="btn-small" style="margin-right: 5px;">Edit</button>
                         <button onclick="deleteUser(${user.id})" class="btn-danger btn-small">Delete</button>
                     </td>
