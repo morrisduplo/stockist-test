@@ -342,17 +342,6 @@
             background: #333333;
         }
 
-        .clear-btn {
-            background: #dc3545;
-            font-size: 14px;
-            padding: 8px 16px;
-            margin-right: 10px;
-        }
-
-        .clear-btn:hover {
-            background: #c82333;
-        }
-
         .filter-controls {
             display: flex;
             gap: 10px;
@@ -616,7 +605,6 @@
                     <h2>Stored Records</h2>
                     <div class="records-controls">
                         <span id="recordCount" class="record-count"></span>
-                        <button id="clearDataBtn" class="clear-btn">Clear All Data</button>
                         <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
                     </div>
                 </div>
@@ -727,7 +715,6 @@
         const uploadLogContainer = document.getElementById('uploadLogContainer');
         const refreshLogBtn = document.getElementById('refreshLogBtn');
         const logCount = document.getElementById('logCount');
-        const clearDataBtn = document.getElementById('clearDataBtn');
         const searchInput = document.getElementById('searchInput');
         const customerFilter = document.getElementById('customerFilter');
         const countryFilter = document.getElementById('countryFilter');
@@ -1051,36 +1038,6 @@
         customerFilter.addEventListener('change', applyFilters);
         countryFilter.addEventListener('change', applyFilters);
         cancelEdit.addEventListener('click', closeEditModal);
-
-        // Clear data button handler
-        clearDataBtn.addEventListener('click', async () => {
-            if (confirm('Are you sure you want to delete ALL data? This cannot be undone!')) {
-                try {
-                    clearDataBtn.disabled = true;
-                    clearDataBtn.textContent = 'Clearing...';
-                    
-                    const response = await fetch('/clear-data', {
-                        method: 'POST'
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        showStatus(result.message, 'success');
-                        currentPage = 1;
-                        loadRecords();
-                        loadUploadLog();
-                    } else {
-                        showStatus(result.error, 'error');
-                    }
-                } catch (error) {
-                    showStatus('Error clearing data: ' + error.message, 'error');
-                } finally {
-                    clearDataBtn.disabled = false;
-                    clearDataBtn.textContent = 'Clear All Data';
-                }
-            }
-        });
 
         // Edit form handler
         editForm.addEventListener('submit', async (e) => {
