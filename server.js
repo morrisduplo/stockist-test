@@ -785,7 +785,58 @@ app.post('/api/login', async (req, res) => {
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-
+// TEMPORARY: Fix users table structure
+app.get('/fix-users-table-temp', async (req, res) => {
+    try {
+        // Drop the old users table if it exists
+        await pool.query('DROP TABLE IF EXISTS users CASCADE');
+        
+        // Create the users table with correct structure
+        await pool.query(`
+            CREATE TABLE users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE,
+                email TEXT UNIQUE,
+                password TEXT,
+                role TEXT DEFAULT 'viewer',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        `);
+        
+        // Insert admin user with known password hash
+        const passwordHash = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
+        await pool.query(
+            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+            ['admin', 'admin@antennebooks.com', passwordHash, 'admin']
+        );
+        
+        res.send(`
+            <html>
+                <body style="font-family: Arial; padding: 50px;">
+                    <h1 style="color: green;">✅ Success!</h1>
+                    <p>Users table has been fixed and admin user created!</p>
+                    <hr>
+                    <h3>Login credentials:</h3>
+                    <p><strong>Username:</strong> admin</p>
+                    <p><strong>Password:</strong> admin123</p>
+                    <hr>
+                    <p><a href="/login.html" style="padding: 10px 20px; background: #000; color: white; text-decoration: none; border-radius: 5px;">Go to Login Page</a></p>
+                </body>
+            </html>
+        `);
+    } catch (err) {
+        res.send(`
+            <html>
+                <body style="font-family: Arial; padding: 50px;">
+                    <h1 style="color: red;">Error</h1>
+                    <pre>${err.message}</pre>
+                    <p>${err.stack}</p>
+                </body>
+            </html>
+        `);
+    }
+});
         // Update last login
         await pool.query(
             'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
