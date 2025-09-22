@@ -442,6 +442,7 @@
                 <div class="tab-button active" onclick="switchTab('general')">General Settings</div>
                 <div class="tab-button" onclick="switchTab('mappings')">Customer Name Mappings</div>
                 <div class="tab-button" onclick="switchTab('data')">Data Management</div>
+                <div class="tab-button" onclick="switchTab('users')">Users</div>
                 <div class="tab-button" onclick="switchTab('advanced')">Advanced</div>
             </div>
 
@@ -603,6 +604,86 @@
                 </div>
             </div>
 
+            <!-- Users Tab -->
+            <div id="users-tab" class="tab-content">
+                <div class="settings-section">
+                    <h2>User Management</h2>
+                    
+                    <div class="info-box">
+                        <strong>Manage System Users:</strong>
+                        Create and manage user accounts for accessing the Antenne Books Stockist Database. Control who can view, upload, and manage data in your system.
+                    </div>
+
+                    <!-- Create/Edit User Form -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                        <h3 id="userFormTitle">Create New User</h3>
+                        <form id="userForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <input type="hidden" id="editingUserId">
+                            
+                            <div class="form-group">
+                                <label for="username">Username *</label>
+                                <input type="text" id="username" required placeholder="Enter username">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="email">Email</label>
+                                <input type="email" id="email" placeholder="user@example.com">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="password">Password *</label>
+                                <input type="password" id="password" placeholder="Min 6 characters">
+                                <small style="color: #666; font-size: 11px;">Leave blank when editing to keep existing password</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="role">Role *</label>
+                                <select id="role" required>
+                                    <option value="admin">Admin - Full Access</option>
+                                    <option value="editor">Editor - Can Upload & Edit</option>
+                                    <option value="viewer" selected>Viewer - Read Only</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" id="active" checked>
+                                    <span>Active (User can log in)</span>
+                                </label>
+                            </div>
+                            
+                            <div style="grid-column: span 2; display: flex; gap: 10px;">
+                                <button type="submit" class="btn-success" id="saveUserBtn">Create User</button>
+                                <button type="button" onclick="resetUserForm()" class="btn-secondary">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Users Table -->
+                    <h3>Existing Users</h3>
+                    <div id="usersTableContainer">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #34495e; color: white;">
+                                    <th style="padding: 12px; text-align: left; width: 60px;">ID</th>
+                                    <th style="padding: 12px; text-align: left;">Username</th>
+                                    <th style="padding: 12px; text-align: left;">Email</th>
+                                    <th style="padding: 12px; text-align: left;">Role</th>
+                                    <th style="padding: 12px; text-align: center; width: 100px;">Active</th>
+                                    <th style="padding: 12px; text-align: center; width: 150px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Users will be loaded here -->
+                            </tbody>
+                        </table>
+                        <div id="noUsersMessage" class="no-data" style="display: none; text-align: center; padding: 40px; color: #7f8c8d;">
+                            No users found. Create your first user above.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Advanced Tab -->
             <div id="advanced-tab" class="tab-content">
                 <div class="settings-section">
@@ -654,6 +735,8 @@
     <script>
         let currentMappings = [];
         let importedFile = null;
+        let users = [];
+        let editingUserId = null;
 
         // Tab switching
         function switchTab(tabName) {
@@ -1087,7 +1170,185 @@
         }
 
         // Load settings when page loads
-        document.addEventListener('DOMContentLoaded', loadSettings);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            loadUsers();
+            
+            // Add user form submit handler
+            document.getElementById('userForm').addEventListener('submit', handleUserSubmit);
+        });
+
+        // ============================================
+        // USER MANAGEMENT FUNCTIONS
+        // ============================================
+
+        // Load users
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                if (response.ok) {
+                    users = await response.json();
+                    displayUsers();
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showStatus('Error loading users', 'error');
+            }
+        }
+
+        // Display users in table
+        function displayUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            const noUsersMessage = document.getElementById('noUsersMessage');
+            
+            if (users.length === 0) {
+                tbody.innerHTML = '';
+                noUsersMessage.style.display = 'block';
+                return;
+            }
+            
+            noUsersMessage.style.display = 'none';
+            tbody.innerHTML = users.map(user => `
+                <tr class="user-row">
+                    <td style="padding: 12px;">${user.id}</td>
+                    <td style="padding: 12px; font-weight: bold;">${user.username}</td>
+                    <td style="padding: 12px;">${user.email || '-'}</td>
+                    <td style="padding: 12px;">
+                        <span style="text-transform: capitalize;">${user.role || 'viewer'}</span>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <span class="status-badge ${user.active ? 'status-active' : 'status-inactive'}">
+                            ${user.active ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <button onclick="editUser(${user.id})" class="btn-small" style="margin-right: 5px;">Edit</button>
+                        <button onclick="deleteUser(${user.id})" class="btn-danger btn-small">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Reset user form
+        function resetUserForm() {
+            editingUserId = null;
+            document.getElementById('userForm').reset();
+            document.getElementById('userFormTitle').textContent = 'Create New User';
+            document.getElementById('saveUserBtn').textContent = 'Create User';
+            document.getElementById('password').required = true;
+            document.getElementById('active').checked = true;
+            document.getElementById('role').value = 'viewer';
+            document.getElementById('editingUserId').value = '';
+            
+            // Scroll to top of form if needed
+            document.getElementById('users-tab').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Edit user
+        function editUser(userId) {
+            const user = users.find(u => u.id === userId);
+            if (!user) return;
+            
+            editingUserId = userId;
+            document.getElementById('userFormTitle').textContent = 'Edit User';
+            document.getElementById('saveUserBtn').textContent = 'Update User';
+            document.getElementById('editingUserId').value = userId;
+            document.getElementById('username').value = user.username;
+            document.getElementById('email').value = user.email || '';
+            document.getElementById('role').value = user.role || 'viewer';
+            document.getElementById('active').checked = user.active;
+            document.getElementById('password').required = false;
+            document.getElementById('password').value = '';
+            
+            // Scroll to form
+            document.getElementById('users-tab').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Handle user form submit
+        async function handleUserSubmit(e) {
+            e.preventDefault();
+            
+            const editingId = document.getElementById('editingUserId').value;
+            
+            const formData = {
+                username: document.getElementById('username').value.trim(),
+                email: document.getElementById('email').value.trim(),
+                password: document.getElementById('password').value,
+                role: document.getElementById('role').value,
+                active: document.getElementById('active').checked
+            };
+            
+            // Validate
+            if (!formData.username) {
+                showStatus('Username is required', 'error');
+                return;
+            }
+            
+            if (!editingId && !formData.password) {
+                showStatus('Password is required for new users', 'error');
+                return;
+            }
+            
+            if (formData.password && formData.password.length < 6) {
+                showStatus('Password must be at least 6 characters', 'error');
+                return;
+            }
+            
+            try {
+                const url = editingId ? `/api/users/${editingId}` : '/api/users';
+                const method = editingId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (response.ok) {
+                    showStatus(editingId ? 'User updated successfully' : 'User created successfully');
+                    resetUserForm();
+                    loadUsers();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to save user');
+                }
+            } catch (error) {
+                showStatus('Error saving user: ' + error.message, 'error');
+            }
+        }
+
+        // Delete user
+        async function deleteUser(userId) {
+            const user = users.find(u => u.id === userId);
+            if (!user) return;
+            
+            if (!confirm(`Are you sure you want to delete user "${user.username}"? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showStatus('User deleted successfully');
+                    
+                    // If we were editing this user, reset the form
+                    if (editingUserId === userId) {
+                        resetUserForm();
+                    }
+                    
+                    loadUsers();
+                } else {
+                    throw new Error('Failed to delete user');
+                }
+            } catch (error) {
+                showStatus('Error deleting user: ' + error.message, 'error');
+            }
+        }
     </script>
 </body>
 </html>
