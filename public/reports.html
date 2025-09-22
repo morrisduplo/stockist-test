@@ -4,6 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generate Stockist Reports - Antenne Books</title>
+    
+    <!-- Authentication Check Script -->
+    <script>
+        // Authentication check for protected pages
+        (function() {
+            // List of pages that require admin role
+            const adminOnlyPages = ['/settings', '/settings.html'];
+            
+            // Check authentication
+            const session = localStorage.getItem('userSession');
+            
+            if (!session) {
+                // No session, redirect to login
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            try {
+                const sessionData = JSON.parse(session);
+                
+                // Check if session is still valid
+                const maxAge = sessionData.remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+                if (new Date() - new Date(sessionData.timestamp) > maxAge) {
+                    // Session expired
+                    localStorage.removeItem('userSession');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                // Check role-based access
+                const currentPath = window.location.pathname;
+                const isAdminPage = adminOnlyPages.some(page => currentPath.includes(page));
+                
+                if (isAdminPage && sessionData.role !== 'admin') {
+                    // Editor trying to access admin page
+                    alert('Access denied. Admin privileges required.');
+                    window.location.href = '/';
+                    return;
+                }
+                
+                // Store user info globally for the page to use
+                window.currentUser = sessionData;
+                
+            } catch (e) {
+                // Invalid session data
+                localStorage.removeItem('userSession');
+                window.location.href = '/login.html';
+            }
+        })();
+        
+        function logout() {
+            localStorage.removeItem('userSession');
+            window.location.href = '/login.html';
+        }
+    </script>
+    
     <!-- Import Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,6 +104,37 @@
 
         h1 {
             color: #333333;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .user-info strong {
+            color: #333;
+        }
+
+        .btn-logout {
+            background: #dc3545;
+            color: white;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: #c82333;
         }
 
         .back-link {
@@ -382,7 +469,11 @@
     <div class="container">
         <div class="header">
             <h1>Generate Stockist Reports</h1>
-            <a href="/" class="back-link">← Back to Dashboard</a>
+            <div class="header-right">
+                <span class="user-info">Logged in as: <strong id="currentUserName">User</strong></span>
+                <button class="btn-logout" onclick="logout()">Logout</button>
+                <a href="/" class="back-link">← Back to Dashboard</a>
+            </div>
         </div>
 
         <!-- Error/Success Messages -->
@@ -474,6 +565,11 @@
     </div>
 
     <script>
+        // Display current user
+        if (window.currentUser) {
+            document.getElementById('currentUserName').textContent = window.currentUser.username;
+        }
+        
         // Global variables
         let availableTitles = [];
         let selectedTitles = [];
