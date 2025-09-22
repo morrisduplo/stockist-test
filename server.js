@@ -461,20 +461,41 @@ app.get('/upload-log', async (req, res) => {
 // Get customers
 app.get('/api/customers', async (req, res) => {
     try {
+        // First, get aggregated data per customer
         const result = await pool.query(`
+            WITH customer_aggregates AS (
+                SELECT 
+                    customer_name,
+                    COUNT(*) as total_orders,
+                    SUM(quantity) as total_quantity,
+                    SUM(total) as total_revenue,
+                    MAX(order_date) as last_order
+                FROM records
+                WHERE customer_name IS NOT NULL
+                GROUP BY customer_name
+            ),
+            customer_locations AS (
+                SELECT DISTINCT ON (customer_name)
+                    customer_name,
+                    country,
+                    city
+                FROM records
+                WHERE customer_name IS NOT NULL
+                ORDER BY customer_name, id DESC
+            )
             SELECT 
-                customer_name,
-                country,
-                city,
-                COUNT(*) as total_orders,
-                SUM(quantity) as total_quantity,
-                SUM(total) as total_revenue,
-                MAX(order_date) as last_order,
+                ca.customer_name,
+                COALESCE(cl.country, 'Unknown') as country,
+                COALESCE(cl.city, 'Unknown') as city,
+                ca.total_orders,
+                ca.total_quantity,
+                ca.total_revenue,
+                ca.last_order,
                 CASE WHEN ce.excluded = true THEN true ELSE false END as excluded
-            FROM records r
-            LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
-            GROUP BY r.customer_name, r.country, r.city, ce.excluded
-            ORDER BY customer_name
+            FROM customer_aggregates ca
+            LEFT JOIN customer_locations cl ON ca.customer_name = cl.customer_name
+            LEFT JOIN customer_exclusions ce ON ca.customer_name = ce.customer_name
+            ORDER BY ca.customer_name
         `);
 
         const stats = await pool.query(`
@@ -483,6 +504,7 @@ app.get('/api/customers', async (req, res) => {
                 COUNT(DISTINCT country) as total_countries,
                 COUNT(*) as total_orders
             FROM records
+            WHERE customer_name IS NOT NULL
         `);
 
         res.json({
@@ -490,8 +512,11 @@ app.get('/api/customers', async (req, res) => {
             stats: stats.rows[0]
         });
     } catch (err) {
-        console.error('Database error:', err);
-        res.status(500).json({ error: 'Database error' });
+        console.error('Database error in /api/customers:', err);
+        res.status(500).json({ 
+            error: 'Database error', 
+            details: err.message 
+        });
     }
 });
 
