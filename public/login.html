@@ -270,7 +270,8 @@
             loginBtn.innerHTML = '<span class="loading"></span>';
             
             try {
-                const response = await fetch('/api/users/verify', {
+                // FIXED: Changed from '/api/users/verify' to '/api/login'
+                const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -279,14 +280,14 @@
                 });
                 
                 if (response.ok) {
-                    const user = await response.json();
+                    const data = await response.json();
                     
                     // Store session in localStorage
                     const sessionData = {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        role: user.role,
+                        id: data.user.id,
+                        username: data.user.username,
+                        email: data.user.email,
+                        role: data.user.role,
                         timestamp: new Date().toISOString(),
                         remember: remember
                     };
@@ -312,6 +313,7 @@
                 errorMessage.classList.add('show');
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Login';
+                console.error('Login error:', error);
             }
         });
     </script>
