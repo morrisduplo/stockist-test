@@ -35,6 +35,7 @@ app.use(express.urlencoded({ extended: true }));
 const upload = multer({ dest: 'uploads/' });
 
 // Initialize database tables
+// Initialize database tables
 async function initDatabase() {
     try {
         // Create tables if they don't exist
@@ -95,23 +96,28 @@ async function initDatabase() {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_stockist_customer ON stockist_data(customer_name)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_stockist_order_ref ON stockist_data(order_reference)`);
 
-        // Create default admin user if no users exist
-        const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
-        if (userCount.rows[0].count === '0') {
-            const defaultPassword = await bcrypt.hash('admin123', 10);
-            await pool.query(
-                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
-                ['admin', 'admin@antennebooks.com', defaultPassword, 'admin']
-            );
-            console.log('Default admin user created (username: admin, password: admin123)');
-        }
+        // FORCE CREATE ADMIN USER - DELETE ANY EXISTING AND RECREATE
+        console.log('Checking for admin user...');
+        
+        // First, delete any existing admin user
+        await pool.query("DELETE FROM users WHERE username = 'admin'");
+        
+        // Now create fresh admin user
+        const defaultPassword = '$2a$10$5VjPKz8C9kR8iBmV8zXXxu.hUvpR5sFJ5.NYK8l2cBxFd0LQ1jVDO';
+        await pool.query(
+            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+            ['admin', 'admin@antennebooks.com', defaultPassword, 'admin']
+        );
+        
+        console.log('Admin user created/reset successfully!');
+        console.log('Username: admin');
+        console.log('Password: admin123');
 
         console.log('Database tables initialized successfully');
     } catch (err) {
         console.error('Error initializing database:', err);
     }
 }
-
 // Initialize database on startup
 initDatabase();
 
