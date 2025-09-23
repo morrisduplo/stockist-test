@@ -54,15 +54,227 @@ const customerNameMappings = {
     'COEN SLIGTING BOOKIMPORT BV': 'Coen Sligting'
 };
 
+// Replace the initBooksonixTable function in your server.js (around line 54-85) with this version:
+
 // Initialize Booksonix table - UPDATED TO USE SKU INSTEAD OF ISBN
 async function initBooksonixTable() {
     try {
-        // Drop the old table if you need to migrate
-        // Uncomment this line only for the first deployment with this change
-        // await pool.query('DROP TABLE IF EXISTS booksonix_records');
+        // First, check if the table exists and what columns it has
+        const tableCheck = await pool.query(`
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'booksonix_records'
+            ORDER BY ordinal_position;
+        `);
+        
+        if (tableCheck.rows.length === 0) {
+            // Table doesn't exist, create it with SKU-based structure
+            console.log('Creating new Booksonix table with SKU-based structure...');
+            await pool.query(`
+                CREATE TABLE booksonix_records (
+                    id SERIAL PRIMARY KEY,
+                    sku VARCHAR(100) UNIQUE NOT NULL,
+                    isbn VARCHAR(50),
+                    title VARCHAR(500),
+                    author VARCHAR(500),
+                    publisher VARCHAR(500),
+                    price DECIMAL(10,2),
+                    quantity INTEGER DEFAULT 0,
+                    format VARCHAR(100),
+                    publication_date DATE,
+                    description TEXT,
+                    category VARCHAR(200),
+                    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            
+            // Create indexes
+            await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_sku ON booksonix_records(sku)`);
+            await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_isbn ON booksonix_records(isbn)`);
+            
+            console.log('Booksonix table created successfully with SKU-based structure');
+        } else {
+            // Table exists, check if it needs migration from ISBN to SKU
+            const hasSkuColumn = tableCheck.rows.some(row => row.column_name === 'sku');
+            const isbnColumn = tableCheck.rows.find(row => row.column_name === 'isbn');
+            
+            if (!hasSkuColumn) {
+                console.log('Migrating Booksonix table from ISBN-based to SKU-based structure...');
+                
+                // Add SKU column
+                await pool.query(`ALTER TABLE booksonix_records ADD COLUMN IF NOT EXISTS sku VARCHAR(100)`);
+                
+                // Check if there's existing data
+                const countResult = await pool.query(`SELECT COUNT(*) as count FROM booksonix_records`);
+                const hasData = parseInt(countResult.rows[0].count) > 0;
+                
+                if (hasData) {
+                    // If there's existing data, copy ISBN to SKU for migration
+                    console.log('Migrating existing records: copying ISBN to SKU...');
+                    await pool.query(`UPDATE booksonix_records SET sku = isbn WHERE sku IS NULL AND isbn IS NOT NULL`);
+                    
+                    // For any remaining null SKUs, generate a temporary SKU
+                    await pool.query(`
+                        UPDATE booksonix_records 
+                        SET sku = 'TEMP_' || id::text 
+                        WHERE sku IS NULL
+                    `);
+                }
+                
+                // Drop the old ISBN unique constraint if it exists
+                try {
+                    await pool.query(`ALTER TABLE booksonix_records DROP CONSTRAINT IF EXISTS booksonix_records_isbn_key`);
+                } catch (e) {
+                    console.log('No ISBN constraint to drop');
+                }
+                
+                // Make ISBN nullable if it wasn't already
+                if (isbnColumn && isbnColumn.is_nullable === 'NO') {
+                    await pool.query(`ALTER TABLE booksonix_records ALTER COLUMN isbn DROP NOT NULL`);
+                }
+                
+                // Add unique constraint to SKU
+                try {
+                    await pool.query(`ALTER TABLE booksonix_records ADD CONSTRAINT booksonix_records_sku_key UNIQUE (sku)`);
+                } catch (e) {
+                    console.log('SKU unique constraint may already exist');
+                }
+                
+                // Make SKU NOT NULL
+                await pool.query(`ALTER TABLE booksonix_records ALTER COLUMN sku SET NOT NULL`);
+                
+                console.log('Migration complete: Booksonix table now uses SKU as primary identifier');
+            } else {
+                console.log('Booksonix table already has SKU column, checking constraints...');
+                
+                // Ensure SKU has proper constraints
+                try {
+                    // Check if SKU is NOT NULL
+                    const skuColumn = tableCheck.rows.find(row => row.column_name === 'sku');
+                    if (skuColumn && skuColumn.is_nullable === 'YES') {
+                        // First fill any NULL values
+                        await pool.query(`
+                            UPDATE booksonix_records 
+                            SET sku = COALESCE(isbn, 'TEMP_' || id::text) 
+                            WHERE sku IS NULL
+                        `);
+                        await pool.query(`ALTER TABLE booksonix_records ALTER COLUMN sku SET NOT NULL`);
+                    }
+                    
+                    // Ensure unique constraint exists
+                    await pool.query(`ALTER TABLE booksonix_records ADD CONSTRAINT booksonix_records_sku_key UNIQUE (sku)`);
+                } catch (e) {
+                    // Constraint likely already exists
+                }
+                
+                // Ensure ISBN is nullable
+                if (isbnColumn && isbnColumn.is_nullable === 'NO') {
+                    await pool.query(`ALTER TABLE booksonix_records ALTER COLUMN isbn DROP NOT NULL`);
+                }
+            }
+            
+            // Create indexes if they don't exist
+            await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_sku ON booksonix_records(sku)`);
+            await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_isbn ON booksonix_records(isbn)`);
+        }
+        
+        // Verify final structure
+        const finalCheck = await pool.query(`
+            SELECT COUNT(*) as total FROM booksonix_records
+        `);
+        
+        console.log(`Booksonix table ready with ${finalCheck.rows[0].total} existing records`);
+        
+    } catch (err) {
+        console.error('Error initializing Booksonix table:', err);
+        console.error('Error details:', err.message);
+        
+        // If there's a critical error, try to at least ensure the table exists
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS booksonix_records (
+                    id SERIAL PRIMARY KEY,
+                    sku VARCHAR(100),
+                    isbn VARCHAR(50),
+                    title VARCHAR(500),
+                    author VARCHAR(500),
+                    publisher VARCHAR(500),
+                    price DECIMAL(10,2),
+                    quantity INTEGER DEFAULT 0,
+                    format VARCHAR(100),
+                    publication_date DATE,
+                    description TEXT,
+                    category VARCHAR(200),
+                    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            console.log('Created basic Booksonix table structure');
+        } catch (fallbackErr) {
+            console.error('Failed to create fallback table:', fallbackErr);
+        }
+    }
+}
+
+// Also add this temporary endpoint to manually check/fix the Booksonix table
+// Add this after your other routes (around line 1000+):
+
+// Temporary endpoint to check Booksonix table status
+app.get('/api/booksonix/check-table', async (req, res) => {
+    try {
+        // Check table structure
+        const columns = await pool.query(`
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'booksonix_records'
+            ORDER BY ordinal_position;
+        `);
+        
+        // Check constraints
+        const constraints = await pool.query(`
+            SELECT constraint_name, constraint_type
+            FROM information_schema.table_constraints
+            WHERE table_name = 'booksonix_records';
+        `);
+        
+        // Check record count
+        const count = await pool.query(`SELECT COUNT(*) as total FROM booksonix_records`);
+        
+        // Check sample records
+        const samples = await pool.query(`SELECT * FROM booksonix_records LIMIT 5`);
+        
+        res.json({
+            columns: columns.rows,
+            constraints: constraints.rows,
+            totalRecords: count.rows[0].total,
+            sampleRecords: samples.rows,
+            status: 'Table check complete'
+        });
+        
+    } catch (err) {
+        res.status(500).json({
+            error: 'Failed to check table',
+            message: err.message,
+            detail: err.detail
+        });
+    }
+});
+
+// Temporary endpoint to manually reset the Booksonix table (USE WITH CAUTION!)
+app.post('/api/booksonix/reset-table', async (req, res) => {
+    try {
+        // Only allow this in development or with a special key
+        const resetKey = req.body.resetKey;
+        if (resetKey !== 'RESET_BOOKSONIX_2024') {
+            return res.status(403).json({ error: 'Invalid reset key' });
+        }
+        
+        // Drop and recreate the table
+        await pool.query(`DROP TABLE IF EXISTS booksonix_records`);
         
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS booksonix_records (
+            CREATE TABLE booksonix_records (
                 id SERIAL PRIMARY KEY,
                 sku VARCHAR(100) UNIQUE NOT NULL,
                 isbn VARCHAR(50),
@@ -80,15 +292,22 @@ async function initBooksonixTable() {
             )
         `);
         
-        // Create indexes for better performance
-        await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_sku ON booksonix_records(sku)`);
-        await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_isbn ON booksonix_records(isbn)`);
+        // Create indexes
+        await pool.query(`CREATE INDEX idx_booksonix_sku ON booksonix_records(sku)`);
+        await pool.query(`CREATE INDEX idx_booksonix_isbn ON booksonix_records(isbn)`);
         
-        console.log('Booksonix table initialized successfully (SKU-based)');
+        res.json({
+            success: true,
+            message: 'Booksonix table has been reset with SKU-based structure'
+        });
+        
     } catch (err) {
-        console.error('Error initializing Booksonix table:', err);
+        res.status(500).json({
+            error: 'Failed to reset table',
+            message: err.message
+        });
     }
-}
+});
 
 // Initialize database tables
 async function initDatabase() {
