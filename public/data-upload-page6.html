@@ -71,7 +71,7 @@
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             background: white;
             padding: 30px;
@@ -130,32 +130,11 @@
             border: 1px solid #666;
             border-radius: 4px;
             transition: all 0.3s ease;
+            font-size: 14px;
         }
 
         .back-link:hover {
             background: #f1f3f4;
-        }
-
-        .breadcrumb {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            font-size: 13px;
-            color: #666;
-        }
-
-        .breadcrumb a {
-            color: #666;
-            text-decoration: none;
-        }
-
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
-
-        .breadcrumb-separator {
-            color: #999;
         }
 
         .content-section {
@@ -168,21 +147,28 @@
         .content-section h2 {
             color: #333;
             margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #dee2e6;
+            font-size: 1.3em;
         }
 
         .placeholder-content {
-            padding: 40px;
+            padding: 30px 20px;
             text-align: center;
             background: white;
             border-radius: 8px;
             border: 2px dashed #dee2e6;
-            color: #6c757d;
+            color: #666;
         }
 
         .placeholder-content h3 {
             margin-bottom: 10px;
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .placeholder-content p {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
         }
 
         .status-message {
@@ -209,10 +195,16 @@
             color: #0c5460;
             border: 1px solid #bee5eb;
         }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="mainContainer" style="display: none;">
         <div class="header">
             <h1>Page 6</h1>
             <div class="header-right">
@@ -220,14 +212,6 @@
                 <button class="btn-logout" onclick="logout()">Logout</button>
                 <a href="/data-upload" class="back-link">← Back to Data Upload</a>
             </div>
-        </div>
-
-        <div class="breadcrumb">
-            <a href="/">Home</a>
-            <span class="breadcrumb-separator">→</span>
-            <a href="/data-upload">Data Upload</a>
-            <span class="breadcrumb-separator">→</span>
-            <span>Page 1</span>
         </div>
 
         <!-- Status Message -->
@@ -251,10 +235,59 @@
         
     </div>
 
+    <div class="loading" id="loadingContainer">
+        Checking authentication...
+    </div>
+
     <script>
         // Display current user
         if (window.currentUser) {
             document.getElementById('currentUserName').textContent = window.currentUser.username;
+        }
+
+        // Check authentication on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+        });
+
+        function checkAuth() {
+            const session = localStorage.getItem('userSession');
+            
+            if (!session) {
+                // No session, redirect to login
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            try {
+                const sessionData = JSON.parse(session);
+                
+                // Check if session is still valid
+                const maxAge = sessionData.remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+                if (new Date() - new Date(sessionData.timestamp) > maxAge) {
+                    // Session expired
+                    localStorage.removeItem('userSession');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                // Valid session, show the page
+                displayUserInterface(sessionData);
+                
+            } catch (e) {
+                // Invalid session data
+                localStorage.removeItem('userSession');
+                window.location.href = '/login.html';
+            }
+        }
+
+        function displayUserInterface(sessionData) {
+            // Hide loading, show main container
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('mainContainer').style.display = 'block';
+            
+            // Display user info
+            document.getElementById('currentUserName').textContent = sessionData.username;
         }
 
         // Show status message function
