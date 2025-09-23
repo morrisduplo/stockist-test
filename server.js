@@ -1,910 +1,1099 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Booksonix - Antenne Books</title>
-    
-    <!-- Authentication Check Script -->
-    <script>
-        // Authentication check for protected pages
-        (function() {
-            // Check authentication
-            const session = localStorage.getItem('userSession');
+const express = require('express');
+const { Pool } = require('pg');
+const multer = require('multer');
+const xlsx = require('xlsx');
+const csv = require('csv-parser');
+const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcryptjs');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// PostgreSQL connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Test database connection
+pool.connect((err, client, release) => {
+    if (err) {
+        console.error('Error connecting to database:', err.stack);
+    } else {
+        console.log('Connected to PostgreSQL database');
+        release();
+    }
+});
+
+// Middleware
+app.use(express.static('public'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Configure multer for file uploads
+const upload = multer({ dest: 'uploads/' });
+
+// Customer name mappings configuration
+const customerNameMappings = {
+    'ANTENNE - DIRECT UK': 'Antenne Online UK',
+    'ANTENNE DIRECT': 'Antenne Online',
+    'GARDNERS THE BOOK WHOLESALER': 'Gardners',
+    'ANTENNE BOOKS - DIRECT': 'Antenne Direct',
+    'KOENIG BOOKS LTD': 'Koenig Books',
+    'ANTENNE - EXPORT': 'Antenne Export',
+    'FISHPOND WORLD LTD': 'Fishpond',
+    'NEWS AND COFFEE LTD': 'News and Coffee',
+    'BOOKS ETC. LTD (INTERNET SITE)': 'Books Etc Online',
+    'WHITE CUBE LIMITED': 'White Cube',
+    'ISSUES MAGAZINE SHOP': 'Issues Shop',
+    'ATHENAEUM BOEKHANDEL BV': 'Athenaeum',
+    'UNITOM UNIVERSAL TOMORROW LTD': 'Unitom',
+    'THE AFFAIRS CIRCULATION LTD': 'The Affairs',
+    'PBSHOP.CO.UK LIMITED': 'PB Shop',
+    'COEN SLIGTING BOOKIMPORT BV': 'Coen Sligting'
+};
+
+// Initialize Booksonix table - UPDATED TO USE SKU INSTEAD OF ISBN
+async function initBooksonixTable() {
+    try {
+        // Drop the old table if you need to migrate
+        // Uncomment this line only for the first deployment with this change
+        // await pool.query('DROP TABLE IF EXISTS booksonix_records');
+        
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS booksonix_records (
+                id SERIAL PRIMARY KEY,
+                sku VARCHAR(100) UNIQUE NOT NULL,
+                isbn VARCHAR(50),
+                title VARCHAR(500),
+                author VARCHAR(500),
+                publisher VARCHAR(500),
+                price DECIMAL(10,2),
+                quantity INTEGER DEFAULT 0,
+                format VARCHAR(100),
+                publication_date DATE,
+                description TEXT,
+                category VARCHAR(200),
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create indexes for better performance
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_sku ON booksonix_records(sku)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_isbn ON booksonix_records(isbn)`);
+        
+        console.log('Booksonix table initialized successfully (SKU-based)');
+    } catch (err) {
+        console.error('Error initializing Booksonix table:', err);
+    }
+}
+
+// Initialize database tables
+async function initDatabase() {
+    try {
+        console.log('Starting database initialization...');
+        
+        // Create records table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS records (
+                id SERIAL PRIMARY KEY,
+                order_date DATE,
+                customer_name VARCHAR(500),
+                title VARCHAR(500),
+                book_ean VARCHAR(50),
+                quantity INTEGER DEFAULT 0,
+                total DECIMAL(10,2) DEFAULT 0,
+                country VARCHAR(100) DEFAULT 'Unknown',
+                city VARCHAR(100) DEFAULT 'Unknown',
+                order_reference VARCHAR(200),
+                line_identifier VARCHAR(200),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(order_reference, line_identifier)
+            )
+        `);
+
+        // Create upload_log table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS upload_log (
+                id SERIAL PRIMARY KEY,
+                filename VARCHAR(500),
+                records_count INTEGER DEFAULT 0,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Create customer_exclusions table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS customer_exclusions (
+                id SERIAL PRIMARY KEY,
+                customer_name VARCHAR(500) UNIQUE,
+                excluded BOOLEAN DEFAULT true,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Create users table with correct structure
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) DEFAULT 'editor',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        `);
+
+        // Create indexes for better performance
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_customer ON records(customer_name)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_order_ref ON records(order_reference)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_date ON records(order_date)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_exclusions ON customer_exclusions(customer_name)`);
+
+        // Initialize Booksonix table
+        await initBooksonixTable();
+
+        console.log('Database tables created successfully');
+        
+        // Check if admin user exists
+        const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
+        
+        if (adminCheck.rows.length === 0) {
+            console.log('Creating admin user...');
             
-            if (!session) {
-                // No session, redirect to login
-                window.location.href = '/login.html';
-                return;
+            // Create admin user with password 'admin123'
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            
+            await pool.query(
+                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
+                ['admin', 'admin@antennebooks.com', hashedPassword, 'admin']
+            );
+            
+            console.log('=================================');
+            console.log('Admin user created successfully!');
+            console.log('Username: admin');
+            console.log('Password: admin123');
+            console.log('IMPORTANT: Please change this password immediately after first login!');
+            console.log('=================================');
+        } else {
+            console.log('Admin user already exists');
+        }
+        
+    } catch (err) {
+        console.error('Error initializing database:', err);
+        throw err;
+    }
+}
+
+// Initialize database on startup
+initDatabase().catch(err => {
+    console.error('Failed to initialize database:', err);
+});
+
+// Helper function to apply customer name mapping
+function applyMapping(customerName) {
+    return customerNameMappings[customerName] || customerName;
+}
+
+// Helper function to log uploads
+async function logUpload(filename, recordCount) {
+    try {
+        await pool.query(
+            'INSERT INTO upload_log (filename, records_count) VALUES ($1, $2)',
+            [filename, recordCount]
+        );
+    } catch (err) {
+        console.error('Error logging upload:', err);
+    }
+}
+
+// =============================================
+// PAGE ROUTES
+// =============================================
+
+// Home page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Upload page
+app.get('/upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'upload.html'));
+});
+
+// Customers page
+app.get('/customers', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'customers.html'));
+});
+
+// Reports page
+app.get('/reports', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+});
+
+// Settings page
+app.get('/settings', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
+// Login page (explicit route)
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Login page with .html extension
+app.get('/login.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Data Upload main page
+app.get('/data-upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload.html'));
+});
+
+// Data Upload sub-pages
+app.get('/data-upload/page1', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page1.html'));
+});
+
+app.get('/data-upload/page2', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page2.html'));
+});
+
+app.get('/data-upload/page3', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page3.html'));
+});
+
+app.get('/data-upload/page4', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page4.html'));
+});
+
+app.get('/data-upload/page5', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page5.html'));
+});
+
+app.get('/data-upload/page6', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page6.html'));
+});
+
+// =============================================
+// BOOKSONIX ROUTES - UPDATED TO USE SKU
+// =============================================
+
+// Page route for Booksonix
+app.get('/booksonix', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'booksonix.html'));
+});
+
+// Upload Booksonix data - UPDATED TO USE SKU AS PRIMARY IDENTIFIER
+app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('Processing Booksonix file:', req.file.originalname);
+
+    try {
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        console.log('Total rows in Excel file:', data.length);
+        if (data.length > 0) {
+            console.log('Sample row columns:', Object.keys(data[0]));
+        }
+
+        let newRecords = 0;
+        let duplicates = 0;
+        let errors = 0;
+        let skippedNoSku = 0;
+
+        for (const row of data) {
+            // Look for SKU in multiple possible column names
+            const sku = row['SKU'] || row['sku'] || row['Sku'] || 
+                       row['Product SKU'] || row['Product Code'] || 
+                       row['Item Code'] || row['Code'] || '';
+            
+            if (!sku) {
+                console.log('Skipping row - no SKU found. Row data:', Object.keys(row));
+                skippedNoSku++;
+                errors++;
+                continue; // Skip records without SKU
             }
-            
+
+            // ISBN is now optional
+            const isbn = row['ISBN'] || row['ISBN13'] || row['EAN'] || row['isbn'] || '';
+
             try {
-                const sessionData = JSON.parse(session);
-                
-                // Check if session is still valid
-                const maxAge = sessionData.remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-                if (new Date() - new Date(sessionData.timestamp) > maxAge) {
-                    // Session expired
-                    localStorage.removeItem('userSession');
-                    window.location.href = '/login.html';
-                    return;
+                // Try to insert, but update if SKU already exists
+                const result = await pool.query(
+                    `INSERT INTO booksonix_records 
+                    (sku, isbn, title, author, publisher, price, quantity, format, publication_date, description, category) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    ON CONFLICT (sku) 
+                    DO UPDATE SET 
+                        isbn = COALESCE(NULLIF(EXCLUDED.isbn, ''), booksonix_records.isbn),
+                        title = EXCLUDED.title,
+                        author = EXCLUDED.author,
+                        publisher = EXCLUDED.publisher,
+                        price = EXCLUDED.price,
+                        quantity = booksonix_records.quantity + EXCLUDED.quantity,
+                        format = EXCLUDED.format,
+                        publication_date = EXCLUDED.publication_date,
+                        description = EXCLUDED.description,
+                        category = EXCLUDED.category,
+                        last_updated = CURRENT_TIMESTAMP
+                    RETURNING id, (xmax = 0) AS inserted`,
+                    [
+                        sku,
+                        isbn || null, // Store null if no ISBN
+                        row['Title'] || row['Product Title'] || row['title'] || row['Product'] || '',
+                        row['Author'] || row['Authors'] || row['author'] || '',
+                        row['Publisher'] || row['publisher'] || '',
+                        parseFloat(row['Price'] || row['RRP'] || row['price'] || 0) || 0,
+                        parseInt(row['Quantity'] || row['Stock'] || row['Qty'] || row['quantity'] || 0) || 0,
+                        row['Format'] || row['Binding'] || row['format'] || '',
+                        row['Publication Date'] || row['Pub Date'] || null,
+                        row['Description'] || row['description'] || '',
+                        row['Category'] || row['Subject'] || row['category'] || ''
+                    ]
+                );
+
+                if (result.rows[0].inserted) {
+                    newRecords++;
+                    console.log('Inserted new record with SKU:', sku);
+                } else {
+                    duplicates++;
+                    console.log('Updated existing record with SKU:', sku);
                 }
-                
-                // Store user info globally for the page to use
-                window.currentUser = sessionData;
-                
-            } catch (e) {
-                // Invalid session data
-                localStorage.removeItem('userSession');
-                window.location.href = '/login.html';
+            } catch (err) {
+                console.error('Error inserting Booksonix record with SKU', sku, ':', err.message);
+                errors++;
             }
-        })();
+        }
+
+        // Clean up uploaded file
+        fs.unlinkSync(req.file.path);
+
+        console.log('Upload summary:', {
+            totalRows: data.length,
+            newRecords,
+            duplicates,
+            errors,
+            skippedNoSku
+        });
+
+        res.json({ 
+            success: true, 
+            message: `Processed ${data.length} records. New: ${newRecords}, Updated: ${duplicates}, Errors: ${errors}`,
+            newRecords: newRecords,
+            duplicates: duplicates,
+            errors: errors,
+            skippedNoSku: skippedNoSku
+        });
+
+    } catch (error) {
+        console.error('Booksonix upload error:', error);
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get Booksonix records
+app.get('/api/booksonix/records', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM booksonix_records ORDER BY upload_date DESC LIMIT 500'
+        );
         
-        function logout() {
-            localStorage.removeItem('userSession');
-            window.location.href = '/login.html';
-        }
-    </script>
-    
-    <!-- Import Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        res.json({ records: result.rows });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
-        body {
-            font-family: 'Courier', monospace;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f4;
-            padding: 20px;
-        }
-
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'EB Garamond', serif;
-            font-weight: 400;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #f1f3f4;
-            padding-bottom: 20px;
-        }
-
-        h1 {
-            color: #333333;
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .user-info {
-            font-size: 13px;
-            color: #666;
-        }
-
-        .user-info strong {
-            color: #333;
-        }
-
-        .btn-logout {
-            background: #dc3545;
-            color: white;
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            text-decoration: none;
-            transition: background-color 0.3s;
-        }
-
-        .btn-logout:hover {
-            background: #c82333;
-        }
-
-        .back-link {
-            color: #666;
-            text-decoration: none;
-            padding: 8px 16px;
-            border: 1px solid #666;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-            font-size: 14px;
-        }
-
-        .back-link:hover {
-            background: #f1f3f4;
-        }
-
-        .upload-section {
-            background: #ecf0f1;
-            padding: 20px;
-            border-radius: 5px;
-            margin-bottom: 30px;
-        }
-
-        .upload-form {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .file-drop-area {
-            padding: 30px;
-            border: 2px dashed #bdc3c7;
-            border-radius: 5px;
-            background: white;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            min-height: 120px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-        }
-
-        .file-drop-area:hover {
-            border-color: #666666;
-            background-color: #f8f9fa;
-        }
-
-        .file-drop-area.dragover {
-            border-color: #333333;
-            background-color: #e9ecef;
-        }
-
-        .file-drop-area input[type="file"] {
-            display: none;
-        }
-
-        .file-drop-text {
-            font-size: 14px;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .file-count {
-            font-size: 18px;
-            font-weight: bold;
-            color: #28a745;
-            margin-top: 10px;
-        }
-
-        .file-list {
-            margin-top: 20px;
-            max-height: 200px;
-            overflow-y: auto;
-            background: #f8f9fa;
-            border-radius: 5px;
-            padding: 10px;
-        }
-
-        .file-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            margin: 5px 0;
-            background: white;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            font-size: 12px;
-        }
-
-        .file-item:hover {
-            background: #f1f3f4;
-        }
-
-        .file-name {
-            flex: 1;
-            text-align: left;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .file-size {
-            color: #666;
-            margin-left: 10px;
-            font-size: 11px;
-        }
-
-        .file-status {
-            margin-left: 10px;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 10px;
-            text-transform: uppercase;
-        }
-
-        .status-pending {
-            background: #ffc107;
-            color: #333;
-        }
-
-        .status-processing {
-            background: #17a2b8;
-            color: white;
-        }
-
-        .status-success {
-            background: #28a745;
-            color: white;
-        }
-
-        .status-error {
-            background: #dc3545;
-            color: white;
-        }
-
-        .remove-file {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 10px;
-            margin-left: 10px;
-        }
-
-        .remove-file:hover {
-            background: #c82333;
-        }
-
-        .upload-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        button {
-            background: #000000;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s;
-        }
-
-        button:hover {
-            background: #333333;
-        }
-
-        button:disabled {
-            background: #bdc3c7;
-            cursor: not-allowed;
-        }
-
-        .btn-clear {
-            background: #6c757d;
-        }
-
-        .btn-clear:hover {
-            background: #5a6268;
-        }
-
-        .status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-        }
-
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .upload-progress {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            display: none;
-        }
-
-        .progress-title {
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        .progress-bar-container {
-            width: 100%;
-            height: 20px;
-            background: #ddd;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .progress-bar {
-            height: 100%;
-            background: #28a745;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-
-        .progress-text {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #666;
-        }
-
-        .records-section {
-            margin-top: 30px;
-        }
-
-        .records-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .records-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .refresh-btn {
-            background: #000000;
-            font-size: 14px;
-            padding: 8px 16px;
-        }
-
-        .refresh-btn:hover {
-            background: #333333;
-        }
-
-        .stats-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            text-align: center;
-            border: 1px solid #ddd;
-        }
-
-        .stat-number {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            color: #666;
-            font-size: 12px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            font-size: 11px;
-        }
-
-        th, td {
-            padding: 4px 6px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-            line-height: 1.2;
-        }
-
-        th {
-            background-color: #34495e;
-            color: white;
-            font-weight: normal;
-            font-family: 'Courier', monospace;
-            font-size: 10px;
-            text-transform: uppercase;
-            position: sticky;
-            top: 0;
-        }
-
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #7f8c8d;
-        }
-
-        .no-records {
-            text-align: center;
-            padding: 40px;
-            color: #7f8c8d;
-            font-style: italic;
-            font-size: 12px;
-        }
-
-        .record-count {
-            color: #7f8c8d;
-            font-size: 14px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Booksonix</h1>
-            <div class="header-right">
-                <span class="user-info">Logged in as: <strong id="currentUserName">User</strong></span>
-                <button class="btn-logout" onclick="logout()">Logout</button>
-                <a href="/data-upload" class="back-link">← Back to Data Upload</a>
-            </div>
-        </div>
+// Get Booksonix statistics - UPDATED TO COUNT UNIQUE SKUs
+app.get('/api/booksonix/stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT sku) as unique_skus,
+                SUM(quantity) as total_quantity,
+                COUNT(DISTINCT publisher) as publishers
+            FROM booksonix_records
+        `);
         
-        <!-- Upload Section -->
-        <div class="upload-section">
-            <h2>Upload Booksonix Data</h2>
-            <form id="uploadForm" class="upload-form">
-                <div class="file-drop-area" id="fileDropArea">
-                    <div>📁 Drop Excel files here or click to browse</div>
-                    <div class="file-drop-text">Supports .xlsx and .xls files</div>
-                    <div class="file-count" id="fileCount" style="display: none;"></div>
-                    <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
-                </div>
-                
-                <div id="fileList" class="file-list" style="display: none;"></div>
-                
-                <div class="upload-controls">
-                    <button type="submit" id="uploadBtn">Upload & Process Files</button>
-                    <button type="button" id="clearBtn" class="btn-clear" style="display: none;">Clear All Files</button>
-                </div>
-                
-                <div id="uploadProgress" class="upload-progress">
-                    <div class="progress-title">Processing Files...</div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="progressBar"></div>
-                    </div>
-                    <div class="progress-text" id="progressText">Processing file 0 of 0...</div>
-                </div>
-            </form>
-            <div id="status" class="status"></div>
-        </div>
+        res.json({
+            totalRecords: result.rows[0].total_records || 0,
+            uniqueSKUs: result.rows[0].unique_skus || 0,  // Changed from uniqueISBNs
+            totalQuantity: result.rows[0].total_quantity || 0,
+            totalPublishers: result.rows[0].publishers || 0
+        });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
-        <!-- Statistics Section -->
-        <div class="stats-section">
-            <div class="stat-card">
-                <div class="stat-number" id="totalRecords">0</div>
-                <div class="stat-label">Total Records</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="uniqueSKUs">0</div>
-                <div class="stat-label">Unique SKUs</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="newRecords">0</div>
-                <div class="stat-label">New Records Added</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="duplicatesSkipped">0</div>
-                <div class="stat-label">Duplicates Skipped</div>
-            </div>
-        </div>
+// =============================================
+// API ROUTES
+// =============================================
 
-        <!-- Records Section -->
-        <div class="records-section">
-            <div class="records-header">
-                <h2>Booksonix Records</h2>
-                <div class="records-controls">
-                    <span id="recordCount" class="record-count"></span>
-                    <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
-                </div>
-            </div>
-            
-            <div id="recordsContainer">
-                <div class="loading">Loading records...</div>
-            </div>
-        </div>
-    </div>
+// Authentication endpoint
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
 
-    <script>
-        // Display current user
-        if (window.currentUser) {
-            document.getElementById('currentUserName').textContent = window.currentUser.username;
+    console.log('Login attempt for username:', username);
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    try {
+        const result = await pool.query(
+            'SELECT * FROM users WHERE username = $1 OR email = $1',
+            [username]
+        );
+
+        console.log('Found users:', result.rows.length);
+
+        if (result.rows.length === 0) {
+            console.log('No user found with username:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
+
+        const user = result.rows[0];
+        console.log('User found:', user.username, 'Role:', user.role);
         
-        // DOM elements
-        const uploadForm = document.getElementById('uploadForm');
-        const fileInput = document.getElementById('fileInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const status = document.getElementById('status');
-        const fileDropArea = document.getElementById('fileDropArea');
-        const fileCount = document.getElementById('fileCount');
-        const fileList = document.getElementById('fileList');
-        const uploadProgress = document.getElementById('uploadProgress');
-        const progressBar = document.getElementById('progressBar');
-        const progressText = document.getElementById('progressText');
-        const recordsContainer = document.getElementById('recordsContainer');
-        const refreshBtn = document.getElementById('refreshBtn');
-        const recordCount = document.getElementById('recordCount');
+        const validPassword = await bcrypt.compare(password, user.password);
+        console.log('Password valid:', validPassword);
         
-        // Stats elements
-        const totalRecordsEl = document.getElementById('totalRecords');
-        const uniqueSKUsEl = document.getElementById('uniqueSKUs');
-        const newRecordsEl = document.getElementById('newRecords');
-        const duplicatesSkippedEl = document.getElementById('duplicatesSkipped');
+        if (!validPassword) {
+            console.log('Invalid password for user:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
 
-        let selectedFiles = [];
-        let booksonixRecords = [];
+        // Update last login
+        await pool.query(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
+            [user.id]
+        );
 
-        // Drag and drop functionality
-        fileDropArea.addEventListener('click', () => fileInput.click());
+        console.log('Login successful for:', username);
 
-        fileDropArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            fileDropArea.classList.add('dragover');
-        });
-
-        fileDropArea.addEventListener('dragleave', () => {
-            fileDropArea.classList.remove('dragover');
-        });
-
-        fileDropArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            fileDropArea.classList.remove('dragover');
-            
-            const files = e.dataTransfer.files;
-            handleFileSelection(files);
-        });
-
-        // File input change handler
-        fileInput.addEventListener('change', (e) => {
-            handleFileSelection(e.target.files);
-        });
-
-        // Clear button handler
-        clearBtn.addEventListener('click', () => {
-            clearFileSelection();
-        });
-
-        // Refresh button handler
-        refreshBtn.addEventListener('click', loadRecords);
-
-        // Handle file selection
-        function handleFileSelection(files) {
-            selectedFiles = [];
-            
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                if (file.name.match(/\.(xlsx|xls)$/i)) {
-                    selectedFiles.push({
-                        file: file,
-                        status: 'pending',
-                        message: ''
-                    });
-                }
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
             }
-            
-            if (selectedFiles.length === 0) {
-                showStatus('Please select valid Excel files (.xlsx, .xls)', 'error');
-                return;
-            }
-            
-            updateFileDisplay();
-        }
+        });
+    } catch (err) {
+        console.error('Login database error:', err);
+        res.status(500).json({ error: 'Database error during login' });
+    }
+});
 
-        // Clear file selection
-        function clearFileSelection() {
-            selectedFiles = [];
-            fileInput.value = '';
-            updateFileDisplay();
-            uploadProgress.style.display = 'none';
-        }
+// Upload endpoint
+app.post('/upload', upload.single('excelFile'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
 
-        // Update file display
-        function updateFileDisplay() {
-            if (selectedFiles.length === 0) {
-                fileCount.style.display = 'none';
-                fileList.style.display = 'none';
-                clearBtn.style.display = 'none';
-                fileDropArea.innerHTML = `
-                    <div>📁 Drop Excel files here or click to browse</div>
-                    <div class="file-drop-text">Supports .xlsx and .xls files</div>
-                    <div class="file-count" id="fileCount" style="display: none;"></div>
-                `;
-                
-                // Re-add the input element
-                const newInput = document.createElement('input');
-                newInput.type = 'file';
-                newInput.id = 'fileInput';
-                newInput.accept = '.xlsx,.xls';
-                newInput.multiple = true;
-                newInput.style.display = 'none';
-                newInput.addEventListener('change', (e) => handleFileSelection(e.target.files));
-                fileDropArea.appendChild(newInput);
-                fileInput = newInput;
-            } else {
-                fileCount.textContent = `${selectedFiles.length} file(s) selected`;
-                fileCount.style.display = 'block';
-                clearBtn.style.display = 'block';
-                
-                // Update file list
-                fileList.innerHTML = '';
-                selectedFiles.forEach((fileInfo, index) => {
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'file-item';
-                    
-                    const fileName = document.createElement('div');
-                    fileName.className = 'file-name';
-                    fileName.textContent = fileInfo.file.name;
-                    
-                    const fileSize = document.createElement('span');
-                    fileSize.className = 'file-size';
-                    fileSize.textContent = formatFileSize(fileInfo.file.size);
-                    
-                    const fileStatus = document.createElement('span');
-                    fileStatus.className = `file-status status-${fileInfo.status}`;
-                    fileStatus.textContent = fileInfo.status;
-                    
-                    const removeBtn = document.createElement('button');
-                    removeBtn.className = 'remove-file';
-                    removeBtn.textContent = '×';
-                    removeBtn.onclick = () => removeFile(index);
-                    
-                    fileItem.appendChild(fileName);
-                    fileItem.appendChild(fileSize);
-                    fileItem.appendChild(fileStatus);
-                    if (fileInfo.status === 'pending') {
-                        fileItem.appendChild(removeBtn);
-                    }
-                    
-                    fileList.appendChild(fileItem);
-                });
-                
-                fileList.style.display = 'block';
-            }
-        }
+    const dataType = req.body.dataType || 'gazelle';
+    console.log('Processing file:', req.file.originalname, 'Type:', dataType);
 
-        // Remove individual file
-        function removeFile(index) {
-            selectedFiles.splice(index, 1);
-            updateFileDisplay();
-        }
+    try {
+        let recordsProcessed = 0;
+        let duplicatesSkipped = 0;
 
-        // Format file size
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-        }
-
-        // Upload form handler
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            if (selectedFiles.length === 0) {
-                showStatus('Please select files to upload', 'error');
-                return;
-            }
-
-            uploadBtn.disabled = true;
-            clearBtn.disabled = true;
-            uploadProgress.style.display = 'block';
-            status.style.display = 'none';
-            
-            let successCount = 0;
-            let errorCount = 0;
-            let totalNewRecords = 0;
-            let totalDuplicates = 0;
-
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const fileInfo = selectedFiles[i];
-                
-                // Update progress
-                progressBar.style.width = `${((i + 1) / selectedFiles.length) * 100}%`;
-                progressText.textContent = `Processing file ${i + 1} of ${selectedFiles.length}: ${fileInfo.file.name}`;
-                
-                // Update file status
-                fileInfo.status = 'processing';
-                updateFileDisplay();
-                
-                const formData = new FormData();
-                formData.append('booksonixFile', fileInfo.file);
-
-                try {
-                    const response = await fetch('/api/booksonix/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    const result = await response.json();
-
-                    if (response.ok) {
-                        fileInfo.status = 'success';
-                        fileInfo.message = result.message;
-                        successCount++;
-                        totalNewRecords += result.newRecords || 0;
-                        totalDuplicates += result.duplicates || 0;
+        if (dataType === 'shopify' || req.file.originalname.toLowerCase().endsWith('.csv')) {
+            // Process CSV file (Shopify format)
+            const results = [];
+            const stream = fs.createReadStream(req.file.path)
+                .pipe(csv())
+                .on('data', (data) => results.push(data))
+                .on('end', async () => {
+                    for (const row of results) {
+                        const orderReference = row['Name'] || row['Order Name'] || '';
+                        const lineItem = row['Lineitem name'] || '';
                         
-                        // Update stats
-                        newRecordsEl.textContent = totalNewRecords;
-                        duplicatesSkippedEl.textContent = totalDuplicates;
-                    } else {
-                        fileInfo.status = 'error';
-                        fileInfo.message = result.error || 'Upload failed';
-                        errorCount++;
+                        if (orderReference) {
+                            const lineIdentifier = `${orderReference}_${lineItem}`;
+                            
+                            try {
+                                const insertResult = await pool.query(
+                                    `INSERT INTO records 
+                                    (order_date, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) 
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                    ON CONFLICT (order_reference, line_identifier) DO NOTHING
+                                    RETURNING id`,
+                                    [
+                                        row['Created at'] || null,
+                                        applyMapping(row['Shipping Name'] || 'Unknown'),
+                                        row['Lineitem name'] || '',
+                                        row['Lineitem sku'] || '',
+                                        parseInt(row['Lineitem quantity']) || 0,
+                                        parseFloat(row['Lineitem price']) || 0,
+                                        'Unknown',
+                                        'Unknown',
+                                        orderReference,
+                                        lineIdentifier
+                                    ]
+                                );
+                                
+                                if (insertResult.rows.length > 0) {
+                                    recordsProcessed++;
+                                } else {
+                                    duplicatesSkipped++;
+                                }
+                            } catch (err) {
+                                console.error('Error inserting CSV row:', err);
+                            }
+                        }
                     }
-                } catch (error) {
-                    fileInfo.status = 'error';
-                    fileInfo.message = 'Network error: ' + error.message;
-                    errorCount++;
+                    
+                    await logUpload(req.file.originalname, recordsProcessed);
+                    fs.unlinkSync(req.file.path);
+                    
+                    res.json({ 
+                        success: true, 
+                        message: `Uploaded ${recordsProcessed} records, ${duplicatesSkipped} duplicates skipped`,
+                        inserted: recordsProcessed,
+                        skipped: duplicatesSkipped
+                    });
+                });
+        } else {
+            // Process Excel file (Gazelle format)
+            const workbook = xlsx.readFile(req.file.path);
+            const sheetName = workbook.SheetNames[0];
+            const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+            for (const row of data) {
+                const orderReference = row['Invoice'] || row['Order Reference'] || '';
+                const productTitle = row['Title'] || '';
+                
+                if (orderReference) {
+                    const lineIdentifier = `${orderReference}_${productTitle}`;
+                    
+                    try {
+                        const insertResult = await pool.query(
+                            `INSERT INTO records 
+                            (order_date, customer_name, title, book_ean, quantity, total, country, city, order_reference, line_identifier) 
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            ON CONFLICT (order_reference, line_identifier) DO NOTHING
+                            RETURNING id`,
+                            [
+                                row['Date'] || null,
+                                applyMapping(row['Customer'] || 'Unknown'),
+                                productTitle,
+                                row['ISBN'] || row['EAN'] || '',
+                                parseInt(row['Quantity']) || parseInt(row['Qty']) || 0,
+                                parseFloat(row['Total']) || parseFloat(row['Amount']) || 0,
+                                'Unknown',
+                                'Unknown',
+                                orderReference,
+                                lineIdentifier
+                            ]
+                        );
+                        
+                        if (insertResult.rows.length > 0) {
+                            recordsProcessed++;
+                        } else {
+                            duplicatesSkipped++;
+                        }
+                    } catch (err) {
+                        console.error('Error inserting Excel row:', err);
+                    }
                 }
-                
-                updateFileDisplay();
             }
+
+            await logUpload(req.file.originalname, recordsProcessed);
+            fs.unlinkSync(req.file.path);
             
-            // Show final status
-            progressBar.style.width = '100%';
-            progressText.textContent = 'Processing complete!';
-            
-            let statusMessage = `Processed ${selectedFiles.length} file(s): ${successCount} successful`;
-            if (errorCount > 0) {
-                statusMessage += `, ${errorCount} failed`;
-            }
-            statusMessage += `. ${totalNewRecords} new records added`;
-            if (totalDuplicates > 0) {
-                statusMessage += `, ${totalDuplicates} duplicates skipped`;
-            }
-            
-            showStatus(statusMessage, errorCount === 0 ? 'success' : 'error');
-            
-            uploadBtn.disabled = false;
-            clearBtn.disabled = false;
-            
-            // Refresh data
-            loadRecords();
-            loadStats();
-            
-            // Auto-clear after successful upload
-            if (errorCount === 0) {
-                setTimeout(() => {
-                    clearFileSelection();
-                }, 3000);
+            res.json({ 
+                success: true, 
+                message: `Uploaded ${recordsProcessed} records, ${duplicatesSkipped} duplicates skipped`,
+                inserted: recordsProcessed,
+                skipped: duplicatesSkipped
+            });
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get records with pagination
+app.get('/records', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 500;
+    const offset = (page - 1) * limit;
+
+    try {
+        // Get total count
+        const countResult = await pool.query('SELECT COUNT(*) FROM records');
+        const totalRecords = parseInt(countResult.rows[0].count);
+        const totalPages = Math.ceil(totalRecords / limit);
+
+        // Get records for current page
+        const result = await pool.query(
+            'SELECT * FROM records ORDER BY id DESC LIMIT $1 OFFSET $2',
+            [limit, offset]
+        );
+
+        res.json({
+            records: result.rows,
+            pagination: {
+                currentPage: page,
+                totalPages: totalPages,
+                totalRecords: totalRecords,
+                recordsPerPage: limit,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1,
+                recordsOnThisPage: result.rows.length
             }
         });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
-        // Show status message
-        function showStatus(message, type) {
-            status.textContent = message;
-            status.className = `status ${type}`;
-            status.style.display = 'block';
-            
-            // Hide status after 5 seconds for success messages
-            if (type === 'success') {
-                setTimeout(() => {
-                    status.style.display = 'none';
-                }, 5000);
-            }
-        }
+// Get upload log
+app.get('/upload-log', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM upload_log ORDER BY upload_date DESC LIMIT 20');
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
-        // Load and display records
-        async function loadRecords() {
-            try {
-                recordsContainer.innerHTML = '<div class="loading">Loading records...</div>';
-                
-                const response = await fetch('/api/booksonix/records');
-                const data = await response.json();
-                
-                booksonixRecords = data.records || [];
-                displayRecords();
-                
-            } catch (error) {
-                recordsContainer.innerHTML = '<div class="no-records">Error loading records: ' + error.message + '</div>';
-                recordCount.textContent = '';
-            }
-        }
+// Get customers
+app.get('/api/customers', async (req, res) => {
+    try {
+        // First, get aggregated data per customer
+        const result = await pool.query(`
+            WITH customer_aggregates AS (
+                SELECT 
+                    customer_name,
+                    COUNT(*) as total_orders,
+                    SUM(quantity) as total_quantity,
+                    SUM(total) as total_revenue,
+                    MAX(order_date) as last_order
+                FROM records
+                WHERE customer_name IS NOT NULL
+                GROUP BY customer_name
+            ),
+            customer_locations AS (
+                SELECT DISTINCT ON (customer_name)
+                    customer_name,
+                    country,
+                    city
+                FROM records
+                WHERE customer_name IS NOT NULL
+                ORDER BY customer_name, id DESC
+            )
+            SELECT 
+                ca.customer_name,
+                COALESCE(cl.country, 'Unknown') as country,
+                COALESCE(cl.city, 'Unknown') as city,
+                ca.total_orders,
+                ca.total_quantity,
+                ca.total_revenue,
+                ca.last_order,
+                CASE WHEN ce.excluded = true THEN true ELSE false END as excluded
+            FROM customer_aggregates ca
+            LEFT JOIN customer_locations cl ON ca.customer_name = cl.customer_name
+            LEFT JOIN customer_exclusions ce ON ca.customer_name = ce.customer_name
+            ORDER BY ca.customer_name
+        `);
 
-        // Display records
-        function displayRecords() {
-            if (booksonixRecords.length === 0) {
-                recordsContainer.innerHTML = '<div class="no-records">No Booksonix records found. Upload Excel files to get started!</div>';
-                recordCount.textContent = '';
-                return;
-            }
+        const stats = await pool.query(`
+            SELECT 
+                COUNT(DISTINCT customer_name) as total_customers,
+                COUNT(DISTINCT country) as total_countries,
+                COUNT(*) as total_orders
+            FROM records
+            WHERE customer_name IS NOT NULL
+        `);
 
-            recordCount.textContent = `${booksonixRecords.length} record${booksonixRecords.length !== 1 ? 's' : ''} found`;
-
-            // Create table
-            const table = document.createElement('table');
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>SKU</th>
-                        <th>ISBN</th>
-                        <th>TITLE</th>
-                        <th>AUTHOR</th>
-                        <th>PUBLISHER</th>
-                        <th>PRICE</th>
-                        <th>QUANTITY</th>
-                        <th>UPLOAD DATE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${booksonixRecords.map(record => `
-                        <tr>
-                            <td>${record.sku || '-'}</td>
-                            <td>${record.isbn || '-'}</td>
-                            <td>${record.title || '-'}</td>
-                            <td>${record.author || '-'}</td>
-                            <td>${record.publisher || '-'}</td>
-                            <td>${record.price ? '£' + parseFloat(record.price).toFixed(2) : '-'}</td>
-                            <td>${record.quantity || 0}</td>
-                            <td>${record.upload_date ? new Date(record.upload_date).toLocaleDateString() : '-'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-
-            recordsContainer.innerHTML = '';
-            recordsContainer.appendChild(table);
-        }
-
-        // Load statistics
-        async function loadStats() {
-            try {
-                const response = await fetch('/api/booksonix/stats');
-                const stats = await response.json();
-                
-                totalRecordsEl.textContent = stats.totalRecords || 0;
-                uniqueSKUsEl.textContent = stats.uniqueSKUs || 0;
-                
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
-        }
-
-        // Load data when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            loadRecords();
-            loadStats();
+        res.json({
+            customers: result.rows,
+            stats: stats.rows[0]
         });
-    </script>
-</body>
-</html>
+    } catch (err) {
+        console.error('Database error in /api/customers:', err);
+        res.status(500).json({ 
+            error: 'Database error', 
+            details: err.message 
+        });
+    }
+});
+
+// Update customer location
+app.post('/api/customers/update', async (req, res) => {
+    const { customerName, field, value } = req.body;
+
+    try {
+        if (field === 'country' || field === 'city') {
+            await pool.query(
+                `UPDATE records SET ${field} = $1 WHERE customer_name = $2`,
+                [value, customerName]
+            );
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ error: 'Invalid field' });
+        }
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Bulk update customer locations
+app.post('/api/customers/bulk-update', async (req, res) => {
+    const { updates } = req.body;
+    let updatedCount = 0;
+
+    try {
+        for (const update of updates) {
+            const result = await pool.query(
+                'UPDATE records SET country = $1, city = $2 WHERE customer_name = $3',
+                [update.country, update.city, update.customerName]
+            );
+            updatedCount += result.rowCount;
+        }
+        res.json({ success: true, updated: updatedCount });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Exclude/Include customers
+app.post('/api/customers/exclude', async (req, res) => {
+    const { customers, excluded } = req.body;
+
+    try {
+        for (const customerName of customers) {
+            await pool.query(
+                `INSERT INTO customer_exclusions (customer_name, excluded) 
+                 VALUES ($1, $2) 
+                 ON CONFLICT (customer_name) 
+                 DO UPDATE SET excluded = $2, updated_at = CURRENT_TIMESTAMP`,
+                [customerName, excluded]
+            );
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Get titles for autocomplete
+app.get('/api/titles', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT DISTINCT title FROM records WHERE title IS NOT NULL ORDER BY title'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Generate report
+app.post('/api/generate-report', async (req, res) => {
+    try {
+        const { publisher, startDate, endDate, titles } = req.body;
+        
+        console.log('Generate report request:', { publisher, startDate, endDate, titlesCount: titles.length });
+        
+        if (!publisher || !startDate || !endDate || !titles || titles.length === 0) {
+            return res.status(400).json({ error: 'Missing required parameters' });
+        }
+        
+        const query = `
+            SELECT 
+                r.customer_name,
+                r.country,
+                r.city,
+                COUNT(*) as total_orders,
+                SUM(r.quantity) as total_quantity,
+                SUM(r.total) as total_revenue,
+                MAX(r.order_date) as last_order
+            FROM records r
+            LEFT JOIN customer_exclusions ce ON r.customer_name = ce.customer_name
+            WHERE r.order_date >= $1 
+            AND r.order_date <= $2
+            AND r.title = ANY($3::text[])
+            AND COALESCE(ce.excluded, false) = false
+            GROUP BY r.customer_name, r.country, r.city
+            ORDER BY total_revenue DESC
+        `;
+        
+        const params = [startDate, endDate, titles];
+        
+        console.log('Executing query with params:', { startDate, endDate, titlesCount: titles.length });
+        
+        const result = await pool.query(query, params);
+        
+        console.log(`Report generated: ${result.rows.length} customers found`);
+        
+        res.json({
+            data: result.rows,
+            totalCustomers: result.rows.length,
+            publisher: publisher,
+            startDate: startDate,
+            endDate: endDate,
+            titles: titles
+        });
+        
+    } catch (error) {
+        console.error('Generate report error:', error);
+        res.status(500).json({ error: 'Failed to generate report: ' + error.message });
+    }
+});
+
+// Update record
+app.post('/api/update-record', async (req, res) => {
+    const { id, customer_name, country, city, title } = req.body;
+
+    try {
+        await pool.query(
+            'UPDATE records SET customer_name = $1, country = $2, city = $3, title = $4 WHERE id = $5',
+            [customer_name, country, city, title, id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Settings endpoints
+app.get('/api/mappings', async (req, res) => {
+    try {
+        const mappings = Object.entries(customerNameMappings).map(([original, display], index) => ({
+            id: index + 1,
+            original_name: original,
+            display_name: display
+        }));
+        res.json(mappings);
+    } catch (err) {
+        console.error('Error loading mappings:', err);
+        res.status(500).json({ error: 'Error loading mappings' });
+    }
+});
+
+app.post('/api/mappings', async (req, res) => {
+    const { original_name, display_name } = req.body;
+    customerNameMappings[original_name] = display_name;
+    res.json({ success: true });
+});
+
+app.delete('/api/mappings/:id', async (req, res) => {
+    // Note: This is a simplified version - in production you'd want to persist these
+    res.json({ success: true });
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT customer_name) as total_customers,
+                COUNT(DISTINCT title) as total_titles
+            FROM records
+        `);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// User management endpoints
+app.get('/api/users', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, username, email, role, created_at, last_login FROM users ORDER BY id'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+app.post('/api/users', async (req, res) => {
+    const { username, email, password, role } = req.body;
+
+    if (!username || !email || !password) {
+        return res.status(400).json({ error: 'Username, email, and password are required' });
+    }
+
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await pool.query(
+            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id',
+            [username, email, hashedPassword, role || 'editor']
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        if (err.code === '23505') {
+            res.status(400).json({ error: 'Username or email already exists' });
+        } else {
+            console.error('Database error:', err);
+            res.status(500).json({ error: 'Database error' });
+        }
+    }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { username, email, password, role } = req.body;
+
+    try {
+        let query = 'UPDATE users SET username = $1, email = $2, role = $3';
+        let params = [username, email, role];
+        let paramIndex = 4;
+
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            query += `, password = $${paramIndex}`;
+            params.push(hashedPassword);
+            paramIndex++;
+        }
+
+        query += ` WHERE id = $${paramIndex}`;
+        params.push(id);
+
+        const result = await pool.query(query, params);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        if (err.code === '23505') {
+            res.status(400).json({ error: 'Username or email already exists' });
+        } else {
+            console.error('Database error:', err);
+            res.status(500).json({ error: 'Database error' });
+        }
+    }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        if (userResult.rows[0].role === 'admin') {
+            const adminCount = await pool.query(
+                "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND id != $1",
+                [id]
+            );
+            
+            if (adminCount.rows[0].count === '0') {
+                return res.status(400).json({ error: 'Cannot delete the last admin user' });
+            }
+        }
+
+        await pool.query('DELETE FROM users WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+app.get('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const result = await pool.query(
+            'SELECT id, username, email, role, created_at, last_login FROM users WHERE id = $1',
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Put settings
+app.put('/api/settings', async (req, res) => {
+    // In a production app, you'd save these settings to the database
+    console.log('Settings update:', req.body);
+    res.json({ success: true });
+});
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ 
+            status: 'healthy', 
+            timestamp: new Date().toISOString(),
+            database: 'connected'
+        });
+    } catch (err) {
+        res.status(503).json({ 
+            status: 'unhealthy', 
+            timestamp: new Date().toISOString(),
+            database: 'disconnected',
+            error: err.message
+        });
+    }
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Visit http://localhost:${PORT} to access the application`);
+    console.log('=================================');
+    console.log('IMPORTANT: Default admin credentials');
+    console.log('Username: admin');
+    console.log('Password: admin123');
+    console.log('Please change this password after first login!');
+    console.log('=================================');
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\nShutting down gracefully...');
+    pool.end(() => {
+        console.log('Database pool closed.');
+        process.exit(0);
+    });
+});
