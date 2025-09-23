@@ -4,6 +4,60 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Antenne Books</title>
+    
+    <!-- Authentication Check Script -->
+    <script>
+        // Authentication check for protected pages
+        (function() {
+            // Check authentication
+            const session = localStorage.getItem('userSession');
+            
+            if (!session) {
+                // No session, redirect to login
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            try {
+                const sessionData = JSON.parse(session);
+                
+                // Check if session is still valid
+                const maxAge = sessionData.remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+                if (new Date() - new Date(sessionData.timestamp) > maxAge) {
+                    // Session expired
+                    localStorage.removeItem('userSession');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                // Check if user is admin
+                if (sessionData.role !== 'admin') {
+                    alert('Access denied. Admin privileges required.');
+                    window.location.href = '/';
+                    return;
+                }
+                
+                // Store user info globally for the page to use
+                window.currentUser = sessionData;
+                
+            } catch (e) {
+                // Invalid session data
+                localStorage.removeItem('userSession');
+                window.location.href = '/login.html';
+            }
+        })();
+        
+        function logout() {
+            localStorage.removeItem('userSession');
+            window.location.href = '/login.html';
+        }
+    </script>
+    
+    <!-- Import Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
         * {
             margin: 0;
@@ -18,6 +72,11 @@
             padding: 20px;
         }
 
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'EB Garamond', serif;
+            font-weight: 400;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -25,6 +84,7 @@
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             overflow: hidden;
+            backdrop-filter: blur(10px);
         }
 
         .header {
@@ -37,8 +97,43 @@
         }
 
         .header h1 {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.9);
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .user-info strong {
+            color: white;
+        }
+
+        .btn-logout {
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-logout:hover {
+            background: #dc3545;
+            transform: translateY(-1px);
         }
 
         .back-link {
@@ -52,6 +147,7 @@
 
         .back-link:hover {
             background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
         }
 
         .tab-container {
@@ -513,8 +609,12 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Settings</h1>
-            <a href="/" class="back-link">← Back to Dashboard</a>
+            <h1>⚙️ Settings</h1>
+            <div class="header-right">
+                <span class="user-info">Logged in as: <strong id="currentUserName">Admin</strong></span>
+                <button class="btn-logout" onclick="logout()">Logout</button>
+                <a href="/" class="back-link">← Back to Dashboard</a>
+            </div>
         </div>
 
         <!-- Status Message -->
@@ -523,11 +623,11 @@
         <!-- Tab Navigation -->
         <div class="tab-container">
             <div class="tab-buttons">
-                <div class="tab-button active" data-tab="general">General Settings</div>
-                <div class="tab-button" data-tab="mappings">Customer Name Mappings</div>
-                <div class="tab-button" data-tab="data">Data Management</div>
-                <div class="tab-button" data-tab="users">Users</div>
-                <div class="tab-button" data-tab="advanced">Advanced</div>
+                <div class="tab-button active" onclick="switchTab('general')">General Settings</div>
+                <div class="tab-button" onclick="switchTab('mappings')">Customer Name Mappings</div>
+                <div class="tab-button" onclick="switchTab('data')">Data Management</div>
+                <div class="tab-button" onclick="switchTab('users')">Users</div>
+                <div class="tab-button" onclick="switchTab('advanced')">Advanced</div>
             </div>
 
             <!-- General Settings Tab -->
@@ -801,29 +901,34 @@
     </div>
 
     <script>
+        // Display current user
+        if (window.currentUser) {
+            document.getElementById('currentUserName').textContent = window.currentUser.username;
+        }
+
         // Tab switching functionality
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                const tabName = button.dataset.tab;
-                
-                // Remove active class from all buttons and contents
-                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                
-                // Add active class to clicked button and corresponding content
-                button.classList.add('active');
-                document.getElementById(`${tabName}-tab`).classList.add('active');
-                
-                // Load data for specific tabs
-                if (tabName === 'mappings') {
-                    loadMappings();
-                } else if (tabName === 'data') {
-                    loadDataStats();
-                } else if (tabName === 'users') {
-                    loadUsers();
-                }
+        function switchTab(tabName) {
+            // Remove active class from all tabs and buttons
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
             });
-        });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to selected tab and button
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Load data for specific tabs
+            if (tabName === 'mappings') {
+                loadMappings();
+            } else if (tabName === 'data') {
+                loadDataStats();
+            } else if (tabName === 'users') {
+                loadUsers();
+            }
+        }
 
         // Show status message
         function showStatus(message, type = 'success') {
