@@ -178,10 +178,34 @@ async function logUpload(filename, recordCount) {
     }
 }
 
-// =============================================
-// PAGE ROUTES - THESE WERE MISSING!
-// =============================================
+app.get('/data-upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload.html'));
+});
 
+// Data Upload sub-pages
+app.get('/data-upload/page1', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page1.html'));
+});
+
+app.get('/data-upload/page2', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page2.html'));
+});
+
+app.get('/data-upload/page3', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page3.html'));
+});
+
+app.get('/data-upload/page4', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page4.html'));
+});
+
+app.get('/data-upload/page5', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page5.html'));
+});
+
+app.get('/data-upload/page6', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page6.html'));
+});
 // Home page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
