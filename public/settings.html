@@ -660,6 +660,10 @@
                             <div class="stat-number" id="excludedCustomers">-</div>
                             <div class="stat-label">Excluded Customers</div>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalBooksonix">-</div>
+                            <div class="stat-label">Booksonix Records</div>
+                        </div>
                     </div>
 
                     <h3 style="margin-top: 30px;">Backup & Export</h3>
@@ -681,9 +685,13 @@
                         <h3>Danger Zone</h3>
                         <p>These actions are irreversible. Please be certain before proceeding.</p>
                         
-                        <div style="display: flex; gap: 10px;">
-                            <button onclick="clearAllData()" class="btn-danger">Clear All Records</button>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="clearAllData()" class="btn-danger">Clear All Sales Records</button>
                             <button onclick="resetExclusions()" class="btn-danger">Reset All Exclusions</button>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="clearBooksonixData()" class="btn-danger">Clear All Booksonix Records</button>
                         </div>
                     </div>
                 </div>
@@ -954,9 +962,10 @@
             }
         }
 
-        // Load statistics
+        // Load statistics - UPDATED to include Booksonix count
         async function loadStatistics() {
             try {
+                // Load main stats
                 const response = await fetch('/api/stats');
                 if (response.ok) {
                     const stats = await response.json();
@@ -964,6 +973,13 @@
                     document.getElementById('totalCustomers').textContent = (stats.total_customers || 0).toLocaleString();
                     document.getElementById('totalTitles').textContent = (stats.total_titles || 0).toLocaleString();
                     document.getElementById('excludedCustomers').textContent = (stats.excluded_customers || 0).toLocaleString();
+                }
+                
+                // Load Booksonix stats
+                const booksonixResponse = await fetch('/api/booksonix/stats');
+                if (booksonixResponse.ok) {
+                    const booksonixStats = await booksonixResponse.json();
+                    document.getElementById('totalBooksonix').textContent = (booksonixStats.totalRecords || 0).toLocaleString();
                 }
             } catch (error) {
                 console.error('Error loading statistics:', error);
@@ -1044,13 +1060,13 @@
             }
         }
 
-        // Clear all data
+        // Clear all sales data - UPDATED with proper API call
         async function clearAllData() {
-            if (!confirm('Are you sure you want to DELETE ALL RECORDS? This cannot be undone!')) {
+            if (!confirm('Are you sure you want to DELETE ALL SALES RECORDS? This cannot be undone!')) {
                 return;
             }
             
-            if (!confirm('This will permanently delete ALL sales records. Are you absolutely sure?')) {
+            if (!confirm('This will permanently delete ALL sales records, upload history, and customer exclusions. Are you absolutely sure?')) {
                 return;
             }
             
@@ -1060,28 +1076,66 @@
                 });
                 
                 if (response.ok) {
-                    showStatus('All records cleared successfully');
+                    showStatus('All sales records cleared successfully');
                     loadStatistics();
                 } else {
-                    throw new Error('Failed to clear records');
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to clear records');
                 }
             } catch (error) {
-                showStatus('Error clearing records', 'error');
+                showStatus('Error clearing records: ' + error.message, 'error');
             }
         }
 
-        // Reset exclusions
+        // Clear all Booksonix data - NEW FUNCTION
+        async function clearBooksonixData() {
+            if (!confirm('Are you sure you want to DELETE ALL BOOKSONIX RECORDS? This cannot be undone!')) {
+                return;
+            }
+            
+            if (!confirm('This will permanently delete ALL Booksonix inventory records. Are you absolutely sure?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/clear-booksonix', {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    showStatus(result.message || 'All Booksonix records cleared successfully');
+                    loadStatistics(); // Refresh the stats
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to clear Booksonix records');
+                }
+            } catch (error) {
+                showStatus('Error clearing Booksonix records: ' + error.message, 'error');
+            }
+        }
+
+        // Reset exclusions - UPDATED with proper API call
         async function resetExclusions() {
             if (!confirm('Are you sure you want to reset all customer exclusions?')) {
                 return;
             }
             
             try {
-                // This endpoint might not exist yet in your server.js
-                showStatus('Exclusions reset successfully');
-                loadStatistics();
+                const response = await fetch('/api/reset-exclusions', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    showStatus(result.message || 'Exclusions reset successfully');
+                    loadStatistics();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to reset exclusions');
+                }
             } catch (error) {
-                showStatus('Error resetting exclusions', 'error');
+                showStatus('Error resetting exclusions: ' + error.message, 'error');
             }
         }
 
