@@ -54,6 +54,36 @@ const customerNameMappings = {
     'COEN SLIGTING BOOKIMPORT BV': 'Coen Sligting'
 };
 
+// Initialize Booksonix table
+async function initBooksonixTable() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS booksonix_records (
+                id SERIAL PRIMARY KEY,
+                isbn VARCHAR(50) UNIQUE NOT NULL,
+                title VARCHAR(500),
+                author VARCHAR(500),
+                publisher VARCHAR(500),
+                price DECIMAL(10,2),
+                quantity INTEGER DEFAULT 0,
+                format VARCHAR(100),
+                publication_date DATE,
+                description TEXT,
+                category VARCHAR(200),
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create index for better performance
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_booksonix_isbn ON booksonix_records(isbn)`);
+        
+        console.log('Booksonix table initialized successfully');
+    } catch (err) {
+        console.error('Error initializing Booksonix table:', err);
+    }
+}
+
 // Initialize database tables
 async function initDatabase() {
     try {
@@ -117,6 +147,9 @@ async function initDatabase() {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_records_date ON records(order_date)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_exclusions ON customer_exclusions(customer_name)`);
 
+        // Initialize Booksonix table
+        await initBooksonixTable();
+
         console.log('Database tables created successfully');
         
         // Check if admin user exists
@@ -137,17 +170,10 @@ async function initDatabase() {
             console.log('Admin user created successfully!');
             console.log('Username: admin');
             console.log('Password: admin123');
+            console.log('IMPORTANT: Please change this password immediately after first login!');
             console.log('=================================');
         } else {
             console.log('Admin user already exists');
-            
-            // Reset admin password to ensure it works
-            const hashedPassword = await bcrypt.hash('admin123', 10);
-            await pool.query(
-                'UPDATE users SET password = $1 WHERE username = $2',
-                [hashedPassword, 'admin']
-            );
-            console.log('Admin password has been reset to: admin123');
         }
         
     } catch (err) {
@@ -178,34 +204,10 @@ async function logUpload(filename, recordCount) {
     }
 }
 
-app.get('/data-upload', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload.html'));
-});
+// =============================================
+// PAGE ROUTES
+// =============================================
 
-// Data Upload sub-pages
-app.get('/data-upload/page1', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page1.html'));
-});
-
-app.get('/data-upload/page2', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page2.html'));
-});
-
-app.get('/data-upload/page3', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page3.html'));
-});
-
-app.get('/data-upload/page4', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page4.html'));
-});
-
-app.get('/data-upload/page5', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page5.html'));
-});
-
-app.get('/data-upload/page6', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'data-upload-page6.html'));
-});
 // Home page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -239,6 +241,174 @@ app.get('/login', (req, res) => {
 // Login page with .html extension
 app.get('/login.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Data Upload main page
+app.get('/data-upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload.html'));
+});
+
+// Data Upload sub-pages
+app.get('/data-upload/page1', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page1.html'));
+});
+
+app.get('/data-upload/page2', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page2.html'));
+});
+
+app.get('/data-upload/page3', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page3.html'));
+});
+
+app.get('/data-upload/page4', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page4.html'));
+});
+
+app.get('/data-upload/page5', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page5.html'));
+});
+
+app.get('/data-upload/page6', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'data-upload-page6.html'));
+});
+
+// =============================================
+// BOOKSONIX ROUTES
+// =============================================
+
+// Page route for Booksonix
+app.get('/booksonix', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'booksonix.html'));
+});
+
+// Upload Booksonix data
+app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('Processing Booksonix file:', req.file.originalname);
+
+    try {
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        let newRecords = 0;
+        let duplicates = 0;
+        let errors = 0;
+
+        for (const row of data) {
+            // Map the Excel columns to database fields
+            // Adjust these field names based on your actual Excel structure
+            const isbn = row['ISBN'] || row['ISBN13'] || row['EAN'] || '';
+            
+            if (!isbn) {
+                errors++;
+                continue; // Skip records without ISBN
+            }
+
+            try {
+                // Try to insert, but update if ISBN already exists
+                const result = await pool.query(
+                    `INSERT INTO booksonix_records 
+                    (isbn, title, author, publisher, price, quantity, format, publication_date, description, category) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (isbn) 
+                    DO UPDATE SET 
+                        title = EXCLUDED.title,
+                        author = EXCLUDED.author,
+                        publisher = EXCLUDED.publisher,
+                        price = EXCLUDED.price,
+                        quantity = booksonix_records.quantity + EXCLUDED.quantity,
+                        format = EXCLUDED.format,
+                        publication_date = EXCLUDED.publication_date,
+                        description = EXCLUDED.description,
+                        category = EXCLUDED.category,
+                        last_updated = CURRENT_TIMESTAMP
+                    RETURNING id, (xmax = 0) AS inserted`,
+                    [
+                        isbn,
+                        row['Title'] || row['Product Title'] || '',
+                        row['Author'] || row['Authors'] || '',
+                        row['Publisher'] || '',
+                        parseFloat(row['Price'] || row['RRP'] || 0) || 0,
+                        parseInt(row['Quantity'] || row['Stock'] || row['Qty'] || 0) || 0,
+                        row['Format'] || row['Binding'] || '',
+                        row['Publication Date'] || row['Pub Date'] || null,
+                        row['Description'] || '',
+                        row['Category'] || row['Subject'] || ''
+                    ]
+                );
+
+                if (result.rows[0].inserted) {
+                    newRecords++;
+                } else {
+                    duplicates++;
+                }
+            } catch (err) {
+                console.error('Error inserting Booksonix record:', err);
+                errors++;
+            }
+        }
+
+        // Clean up uploaded file
+        fs.unlinkSync(req.file.path);
+
+        res.json({ 
+            success: true, 
+            message: `Processed ${data.length} records`,
+            newRecords: newRecords,
+            duplicates: duplicates,
+            errors: errors
+        });
+
+    } catch (error) {
+        console.error('Booksonix upload error:', error);
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get Booksonix records
+app.get('/api/booksonix/records', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM booksonix_records ORDER BY upload_date DESC LIMIT 500'
+        );
+        
+        res.json({ records: result.rows });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Get Booksonix statistics
+app.get('/api/booksonix/stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT isbn) as unique_isbns,
+                SUM(quantity) as total_quantity,
+                COUNT(DISTINCT publisher) as publishers
+            FROM booksonix_records
+        `);
+        
+        res.json({
+            totalRecords: result.rows[0].total_records || 0,
+            uniqueISBNs: result.rows[0].unique_isbns || 0,
+            totalQuantity: result.rows[0].total_quantity || 0,
+            totalPublishers: result.rows[0].publishers || 0
+        });
+    } catch (err) {
+        console.error('Database error:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
 });
 
 // =============================================
@@ -857,35 +1027,6 @@ app.put('/api/settings', async (req, res) => {
     res.json({ success: true });
 });
 
-// EMERGENCY: Force reset admin password
-app.get('/emergency-reset', async (req, res) => {
-    try {
-        const hashedPassword = await bcrypt.hash('admin123', 10);
-        
-        // Check if admin exists
-        const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
-        
-        if (adminCheck.rows.length === 0) {
-            // Create admin user
-            await pool.query(
-                'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4)',
-                ['admin', 'admin@antennebooks.com', hashedPassword, 'admin']
-            );
-            res.send('<h1>Admin user created!</h1><p>Username: admin<br>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
-        } else {
-            // Update admin password
-            await pool.query(
-                'UPDATE users SET password = $1 WHERE username = $2',
-                [hashedPassword, 'admin']
-            );
-            res.send('<h1>Admin password reset!</h1><p>Username: admin<br>Password: admin123</p><p><a href="/login.html">Go to login</a></p>');
-        }
-    } catch (err) {
-        console.error('Reset error:', err);
-        res.status(500).send('<h1>Error</h1><pre>' + err.message + '</pre>');
-    }
-});
-
 // Health check endpoint
 app.get('/health', async (req, res) => {
     try {
@@ -910,9 +1051,10 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Visit http://localhost:${PORT} to access the application`);
     console.log('=================================');
-    console.log('IMPORTANT: Admin credentials');
+    console.log('IMPORTANT: Default admin credentials');
     console.log('Username: admin');
     console.log('Password: admin123');
+    console.log('Please change this password after first login!');
     console.log('=================================');
 });
 
