@@ -507,7 +507,7 @@ app.get('/booksonix', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'booksonix.html'));
 });
 
-// Upload Booksonix data - UPDATED TO USE SKU AS PRIMARY IDENTIFIER
+// Upload Booksonix data - UPDATED TO CAPTURE CORRECT COLUMNS
 app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -523,6 +523,7 @@ app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, re
         console.log('Total rows in Excel file:', data.length);
         if (data.length > 0) {
             console.log('Sample row columns:', Object.keys(data[0]));
+            console.log('First row data:', data[0]);
         }
 
         let newRecords = 0;
@@ -543,8 +544,32 @@ app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, re
                 continue; // Skip records without SKU
             }
 
-            // ISBN is now optional
-            const isbn = row['ISBN'] || row['ISBN13'] || row['EAN'] || row['isbn'] || '';
+            // Get ISBN from column A 'ISBN-13'
+            const isbn = row['ISBN-13'] || row['ISBN13'] || row['isbn-13'] || row['ISBN'] || row['EAN'] || '';
+
+            // Get Title
+            const title = row['Title'] || row['TITLE'] || row['Product Title'] || row['title'] || row['Product'] || '';
+
+            // Get Publisher from column D 'Publishers'
+            const publisher = row['Publishers'] || row['Publisher'] || row['publisher'] || row['PUBLISHER'] || '';
+
+            // Get Price from column E 'Prices' and clean it
+            let price = 0;
+            const priceValue = row['Prices'] || row['Price'] || row['PRICE'] || row['RRP'] || row['price'] || '';
+            if (priceValue) {
+                // Remove GBP, £, spaces, and any other non-numeric characters except decimal point
+                const cleanPrice = String(priceValue)
+                    .replace(/GBP/gi, '')
+                    .replace(/£/g, '')
+                    .replace(/,/g, '')
+                    .replace(/[^\d.]/g, '')
+                    .trim();
+                price = parseFloat(cleanPrice) || 0;
+            }
+
+            // Note: We're removing author and quantity from the insert
+            // But we still need to provide values for all columns in the table
+            // So we'll pass empty/zero values for those fields
 
             try {
                 // Try to insert, but update if SKU already exists
@@ -556,37 +581,31 @@ app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, re
                     DO UPDATE SET 
                         isbn = COALESCE(NULLIF(EXCLUDED.isbn, ''), booksonix_records.isbn),
                         title = EXCLUDED.title,
-                        author = EXCLUDED.author,
                         publisher = EXCLUDED.publisher,
                         price = EXCLUDED.price,
-                        quantity = booksonix_records.quantity + EXCLUDED.quantity,
-                        format = EXCLUDED.format,
-                        publication_date = EXCLUDED.publication_date,
-                        description = EXCLUDED.description,
-                        category = EXCLUDED.category,
                         last_updated = CURRENT_TIMESTAMP
                     RETURNING id, (xmax = 0) AS inserted`,
                     [
                         sku,
                         isbn || null, // Store null if no ISBN
-                        row['Title'] || row['Product Title'] || row['title'] || row['Product'] || '',
-                        row['Author'] || row['Authors'] || row['author'] || '',
-                        row['Publisher'] || row['publisher'] || '',
-                        parseFloat(row['Price'] || row['RRP'] || row['price'] || 0) || 0,
-                        parseInt(row['Quantity'] || row['Stock'] || row['Qty'] || row['quantity'] || 0) || 0,
-                        row['Format'] || row['Binding'] || row['format'] || '',
-                        row['Publication Date'] || row['Pub Date'] || null,
-                        row['Description'] || row['description'] || '',
-                        row['Category'] || row['Subject'] || row['category'] || ''
+                        title,
+                        '', // Empty author - field to be removed
+                        publisher,
+                        price,
+                        0, // Zero quantity - field to be removed
+                        '', // Empty format
+                        null, // No publication date
+                        '', // Empty description
+                        '' // Empty category
                     ]
                 );
 
                 if (result.rows[0].inserted) {
                     newRecords++;
-                    console.log('Inserted new record with SKU:', sku);
+                    console.log(`Inserted new record: SKU=${sku}, ISBN=${isbn}, Title=${title}, Publisher=${publisher}, Price=£${price}`);
                 } else {
                     duplicates++;
-                    console.log('Updated existing record with SKU:', sku);
+                    console.log(`Updated existing record with SKU: ${sku}`);
                 }
             } catch (err) {
                 console.error('Error inserting Booksonix record with SKU', sku, ':', err.message);
