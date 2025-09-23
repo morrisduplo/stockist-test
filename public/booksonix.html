@@ -512,8 +512,8 @@
                 <div class="stat-label">Total Records</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number" id="uniqueISBNs">0</div>
-                <div class="stat-label">Unique ISBNs</div>
+                <div class="stat-number" id="uniqueSKUs">0</div>
+                <div class="stat-label">Unique SKUs</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="newRecords">0</div>
@@ -565,7 +565,7 @@
         
         // Stats elements
         const totalRecordsEl = document.getElementById('totalRecords');
-        const uniqueISBNsEl = document.getElementById('uniqueISBNs');
+        const uniqueSKUsEl = document.getElementById('uniqueSKUs');
         const newRecordsEl = document.getElementById('newRecords');
         const duplicatesSkippedEl = document.getElementById('duplicatesSkipped');
 
@@ -856,6 +856,7 @@
             table.innerHTML = `
                 <thead>
                     <tr>
+                        <th>SKU</th>
                         <th>ISBN</th>
                         <th>TITLE</th>
                         <th>AUTHOR</th>
@@ -868,6 +869,7 @@
                 <tbody>
                     ${booksonixRecords.map(record => `
                         <tr>
+                            <td>${record.sku || '-'}</td>
                             <td>${record.isbn || '-'}</td>
                             <td>${record.title || '-'}</td>
                             <td>${record.author || '-'}</td>
@@ -891,7 +893,7 @@
                 const stats = await response.json();
                 
                 totalRecordsEl.textContent = stats.totalRecords || 0;
-                uniqueISBNsEl.textContent = stats.uniqueISBNs || 0;
+                uniqueSKUsEl.textContent = stats.uniqueSKUs || 0;
                 
             } catch (error) {
                 console.error('Error loading stats:', error);
