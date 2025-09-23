@@ -83,52 +83,28 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #f1f3f4;
+            padding-bottom: 20px;
         }
 
         h1 {
             color: #333333;
-            text-align: center;
-            margin-bottom: 20px;
         }
 
-        .subtitle {
-            color: #666;
-            margin-bottom: 40px;
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .user-info {
+        .header-right {
             display: flex;
             align-items: center;
             gap: 15px;
-            padding: 10px 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
+        }
+
+        .user-info {
             font-size: 13px;
+            color: #666;
         }
 
-        .user-name {
-            font-weight: bold;
+        .user-info strong {
             color: #333;
-        }
-
-        .user-role {
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 11px;
-            text-transform: uppercase;
-        }
-
-        .role-admin {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .role-editor {
-            background: #cce5ff;
-            color: #004085;
         }
 
         .btn-logout {
@@ -155,8 +131,6 @@
             border-radius: 4px;
             transition: all 0.3s ease;
             font-size: 14px;
-            display: inline-block;
-            margin-bottom: 20px;
         }
 
         .back-link:hover {
@@ -178,19 +152,15 @@
             color: #333;
             cursor: pointer;
             text-align: center;
-            min-height: 160px;
+            min-height: 140px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-            border: 1px solid #e0e0e0;
         }
 
         .nav-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            background: #f1f3f4;
+            /* No hover effects */
         }
 
         .nav-card h3 {
@@ -205,115 +175,55 @@
             line-height: 1.4;
         }
 
-        .nav-icon {
-            font-size: 2em;
-            margin-bottom: 15px;
-            display: block;
-        }
-
-        .section-header {
-            margin-top: 40px;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f1f3f4;
-        }
-
-        .section-header h2 {
-            color: #333;
-            font-size: 1.5em;
-        }
-
         .loading {
             text-align: center;
             padding: 50px;
             color: #666;
-        }
-
-        .breadcrumb {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            font-size: 13px;
-            color: #666;
-        }
-
-        .breadcrumb a {
-            color: #666;
-            text-decoration: none;
-        }
-
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
-
-        .breadcrumb-separator {
-            color: #999;
         }
     </style>
 </head>
 <body>
     <div class="container" id="mainContainer" style="display: none;">
         <div class="header">
-            <div>
-                <h1>Data Upload Center</h1>
-            </div>
-            <div class="user-info">
-                <span class="user-name" id="userName">Loading...</span>
-                <span class="user-role" id="userRole">...</span>
+            <h1>Data Upload Center</h1>
+            <div class="header-right">
+                <span class="user-info">Logged in as: <strong id="currentUserName">User</strong></span>
                 <button class="btn-logout" onclick="logout()">Logout</button>
+                <a href="/" class="back-link">← Back to Dashboard</a>
             </div>
-        </div>
-        
-        <div class="breadcrumb">
-            <a href="/">Home</a>
-            <span class="breadcrumb-separator">→</span>
-            <span>Data Upload</span>
-        </div>
-        
-        <div class="subtitle">
-            Select a data upload module to manage different types of sales and stockist data
         </div>
         
         <div class="nav-grid">
             <a href="/data-upload/page1" class="nav-card">
-                <span class="nav-icon">📊</span>
                 <h3>Page 1</h3>
                 <p>Description for page 1 - This module handles specific data upload tasks</p>
             </a>
             
             <a href="/data-upload/page2" class="nav-card">
-                <span class="nav-icon">📈</span>
                 <h3>Page 2</h3>
                 <p>Description for page 2 - Process and validate incoming data files</p>
             </a>
             
             <a href="/data-upload/page3" class="nav-card">
-                <span class="nav-icon">📁</span>
                 <h3>Page 3</h3>
                 <p>Description for page 3 - Manage bulk data operations</p>
             </a>
             
             <a href="/data-upload/page4" class="nav-card">
-                <span class="nav-icon">🔄</span>
                 <h3>Page 4</h3>
                 <p>Description for page 4 - Synchronize data across systems</p>
             </a>
             
             <a href="/data-upload/page5" class="nav-card">
-                <span class="nav-icon">⚙️</span>
                 <h3>Page 5</h3>
                 <p>Description for page 5 - Configure upload settings and mappings</p>
             </a>
             
             <a href="/data-upload/page6" class="nav-card">
-                <span class="nav-icon">📋</span>
                 <h3>Page 6</h3>
                 <p>Description for page 6 - Review and audit uploaded data</p>
             </a>
         </div>
-        
-        <a href="/" class="back-link" style="margin-top: 30px;">← Back to Main Dashboard</a>
     </div>
 
     <div class="loading" id="loadingContainer">
@@ -321,6 +231,11 @@
     </div>
 
     <script>
+        // Display current user
+        if (window.currentUser) {
+            document.getElementById('currentUserName').textContent = window.currentUser.username;
+        }
+
         // Check authentication on page load
         window.addEventListener('DOMContentLoaded', function() {
             checkAuth();
@@ -363,19 +278,21 @@
             document.getElementById('mainContainer').style.display = 'block';
             
             // Display user info
-            document.getElementById('userName').textContent = sessionData.username;
+            document.getElementById('currentUserName').textContent = sessionData.username;
             
             const roleElement = document.getElementById('userRole');
-            if (sessionData.role === 'admin') {
-                roleElement.textContent = 'ADMIN';
-                roleElement.className = 'user-role role-admin';
-            } else if (sessionData.role === 'editor') {
-                roleElement.textContent = 'EDITOR';
-                roleElement.className = 'user-role role-editor';
-            } else {
-                // Handle legacy viewer role as editor
-                roleElement.textContent = 'EDITOR';
-                roleElement.className = 'user-role role-editor';
+            if (roleElement) {
+                if (sessionData.role === 'admin') {
+                    roleElement.textContent = 'ADMIN';
+                    roleElement.className = 'user-role role-admin';
+                } else if (sessionData.role === 'editor') {
+                    roleElement.textContent = 'EDITOR';
+                    roleElement.className = 'user-role role-editor';
+                } else {
+                    // Handle legacy viewer role as editor
+                    roleElement.textContent = 'EDITOR';
+                    roleElement.className = 'user-role role-editor';
+                }
             }
         }
 
