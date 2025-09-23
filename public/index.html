@@ -158,6 +158,15 @@
             display: block;
         }
 
+        .data-upload-card {
+            background: #e7f3ff;
+            border: 2px solid #007bff;
+        }
+
+        .data-upload-card:hover {
+            background: #cce5ff;
+        }
+
         .coming-soon {
             color: #999;
             font-size: 11px;
@@ -185,7 +194,12 @@
             </div>
         </div>
         
-        <div class="nav-grid" id="navGrid">
+        <div class="nav-grid">
+            <a href="/data-upload" class="nav-card data-upload-card">
+                <h3>📤 Data Upload</h3>
+                <p>Access multiple data upload modules for different file types and sources</p>
+            </a>
+            
             <a href="/upload" class="nav-card">
                 <h3>Upload Sales Data</h3>
                 <p>Import Excel and CSV files from Gazelle and Shopify to build your sales database</p>
