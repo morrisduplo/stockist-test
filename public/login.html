@@ -19,7 +19,7 @@
             font-family: 'Courier', monospace;
             line-height: 1.6;
             color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #f4f4f4;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -36,19 +36,22 @@
             background: white;
             padding: 40px;
             border-radius: 10px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
             width: 100%;
             max-width: 400px;
+            border: 2px dashed #bdc3c7;
         }
 
         .logo {
             text-align: center;
             margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f1f3f4;
         }
 
         .logo h1 {
             color: #333;
-            font-size: 28px;
+            font-size: 32px;
             margin-bottom: 5px;
         }
 
@@ -81,7 +84,7 @@
 
         .form-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #666;
         }
 
         .error-message {
@@ -116,18 +119,19 @@
 
         .btn-login {
             width: 100%;
-            background: #000;
+            background: #000000;
             color: white;
             padding: 12px;
             border: none;
             border-radius: 4px;
-            font-size: 16px;
+            font-size: 14px;
             cursor: pointer;
             transition: background-color 0.3s;
+            font-family: 'Courier', monospace;
         }
 
         .btn-login:hover {
-            background: #333;
+            background: #333333;
         }
 
         .btn-login:disabled {
@@ -140,6 +144,8 @@
             margin-top: 30px;
             color: #666;
             font-size: 12px;
+            padding-top: 20px;
+            border-top: 1px solid #f1f3f4;
         }
 
         .loading {
@@ -164,20 +170,38 @@
 
         .remember-me input {
             margin-right: 8px;
+            width: auto;
         }
 
         .remember-me label {
             font-size: 14px;
             color: #666;
             cursor: pointer;
+            margin: 0;
+        }
+
+        /* Additional styling to match dashboard */
+        .info-text {
+            background: #e7f3ff;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            color: #004085;
+            text-align: center;
         }
     </style>
 </head>
 <body>
     <div class="login-container">
         <div class="logo">
-            <h1>Antenne Books</h1>
-            <p>Stockist Database System</p>
+            <h1>Antenne Books Stockist Database</h1>
+            <p>Access your sales and stockist management system</p>
+        </div>
+
+        <div class="info-text">
+            Please enter your credentials to access the system
         </div>
 
         <div id="errorMessage" class="error-message">
@@ -270,7 +294,6 @@
             loginBtn.innerHTML = '<span class="loading"></span>';
             
             try {
-                // FIXED: Changed from '/api/users/verify' to '/api/login'
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: {
