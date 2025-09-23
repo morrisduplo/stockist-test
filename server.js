@@ -54,8 +54,6 @@ const customerNameMappings = {
     'COEN SLIGTING BOOKIMPORT BV': 'Coen Sligting'
 };
 
-// Replace the initBooksonixTable function in your server.js (around line 54-85) with this version:
-
 // Initialize Booksonix table - UPDATED TO USE SKU INSTEAD OF ISBN
 async function initBooksonixTable() {
     try {
@@ -216,98 +214,6 @@ async function initBooksonixTable() {
         }
     }
 }
-
-// Also add this temporary endpoint to manually check/fix the Booksonix table
-// Add this after your other routes (around line 1000+):
-
-// Temporary endpoint to check Booksonix table status
-app.get('/api/booksonix/check-table', async (req, res) => {
-    try {
-        // Check table structure
-        const columns = await pool.query(`
-            SELECT column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns
-            WHERE table_name = 'booksonix_records'
-            ORDER BY ordinal_position;
-        `);
-        
-        // Check constraints
-        const constraints = await pool.query(`
-            SELECT constraint_name, constraint_type
-            FROM information_schema.table_constraints
-            WHERE table_name = 'booksonix_records';
-        `);
-        
-        // Check record count
-        const count = await pool.query(`SELECT COUNT(*) as total FROM booksonix_records`);
-        
-        // Check sample records
-        const samples = await pool.query(`SELECT * FROM booksonix_records LIMIT 5`);
-        
-        res.json({
-            columns: columns.rows,
-            constraints: constraints.rows,
-            totalRecords: count.rows[0].total,
-            sampleRecords: samples.rows,
-            status: 'Table check complete'
-        });
-        
-    } catch (err) {
-        res.status(500).json({
-            error: 'Failed to check table',
-            message: err.message,
-            detail: err.detail
-        });
-    }
-});
-
-// Temporary endpoint to manually reset the Booksonix table (USE WITH CAUTION!)
-app.post('/api/booksonix/reset-table', async (req, res) => {
-    try {
-        // Only allow this in development or with a special key
-        const resetKey = req.body.resetKey;
-        if (resetKey !== 'RESET_BOOKSONIX_2024') {
-            return res.status(403).json({ error: 'Invalid reset key' });
-        }
-        
-        // Drop and recreate the table
-        await pool.query(`DROP TABLE IF EXISTS booksonix_records`);
-        
-        await pool.query(`
-            CREATE TABLE booksonix_records (
-                id SERIAL PRIMARY KEY,
-                sku VARCHAR(100) UNIQUE NOT NULL,
-                isbn VARCHAR(50),
-                title VARCHAR(500),
-                author VARCHAR(500),
-                publisher VARCHAR(500),
-                price DECIMAL(10,2),
-                quantity INTEGER DEFAULT 0,
-                format VARCHAR(100),
-                publication_date DATE,
-                description TEXT,
-                category VARCHAR(200),
-                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        
-        // Create indexes
-        await pool.query(`CREATE INDEX idx_booksonix_sku ON booksonix_records(sku)`);
-        await pool.query(`CREATE INDEX idx_booksonix_isbn ON booksonix_records(isbn)`);
-        
-        res.json({
-            success: true,
-            message: 'Booksonix table has been reset with SKU-based structure'
-        });
-        
-    } catch (err) {
-        res.status(500).json({
-            error: 'Failed to reset table',
-            message: err.message
-        });
-    }
-});
 
 // Initialize database tables
 async function initDatabase() {
@@ -567,10 +473,6 @@ app.post('/api/booksonix/upload', upload.single('booksonixFile'), async (req, re
                 price = parseFloat(cleanPrice) || 0;
             }
 
-            // Note: We're removing author and quantity from the insert
-            // But we still need to provide values for all columns in the table
-            // So we'll pass empty/zero values for those fields
-
             try {
                 // Try to insert, but update if SKU already exists
                 const result = await pool.query(
@@ -670,13 +572,102 @@ app.get('/api/booksonix/stats', async (req, res) => {
         
         res.json({
             totalRecords: result.rows[0].total_records || 0,
-            uniqueSKUs: result.rows[0].unique_skus || 0,  // Changed from uniqueISBNs
+            uniqueSKUs: result.rows[0].unique_skus || 0,
             totalQuantity: result.rows[0].total_quantity || 0,
             totalPublishers: result.rows[0].publishers || 0
         });
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Temporary endpoint to check Booksonix table status
+app.get('/api/booksonix/check-table', async (req, res) => {
+    try {
+        // Check table structure
+        const columns = await pool.query(`
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'booksonix_records'
+            ORDER BY ordinal_position;
+        `);
+        
+        // Check constraints
+        const constraints = await pool.query(`
+            SELECT constraint_name, constraint_type
+            FROM information_schema.table_constraints
+            WHERE table_name = 'booksonix_records';
+        `);
+        
+        // Check record count
+        const count = await pool.query(`SELECT COUNT(*) as total FROM booksonix_records`);
+        
+        // Check sample records
+        const samples = await pool.query(`SELECT * FROM booksonix_records LIMIT 5`);
+        
+        res.json({
+            columns: columns.rows,
+            constraints: constraints.rows,
+            totalRecords: count.rows[0].total,
+            sampleRecords: samples.rows,
+            status: 'Table check complete'
+        });
+        
+    } catch (err) {
+        res.status(500).json({
+            error: 'Failed to check table',
+            message: err.message,
+            detail: err.detail
+        });
+    }
+});
+
+// Temporary endpoint to manually reset the Booksonix table (USE WITH CAUTION!)
+app.post('/api/booksonix/reset-table', async (req, res) => {
+    try {
+        // Only allow this in development or with a special key
+        const resetKey = req.body.resetKey;
+        if (resetKey !== 'RESET_BOOKSONIX_2024') {
+            return res.status(403).json({ error: 'Invalid reset key' });
+        }
+        
+        // Drop and recreate the table
+        await pool.query(`DROP TABLE IF EXISTS booksonix_records`);
+        
+        await pool.query(`
+            CREATE TABLE booksonix_records (
+                id SERIAL PRIMARY KEY,
+                sku VARCHAR(100) UNIQUE NOT NULL,
+                isbn VARCHAR(50),
+                title VARCHAR(500),
+                author VARCHAR(500),
+                publisher VARCHAR(500),
+                price DECIMAL(10,2),
+                quantity INTEGER DEFAULT 0,
+                format VARCHAR(100),
+                publication_date DATE,
+                description TEXT,
+                category VARCHAR(200),
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create indexes
+        await pool.query(`CREATE INDEX idx_booksonix_sku ON booksonix_records(sku)`);
+        await pool.query(`CREATE INDEX idx_booksonix_isbn ON booksonix_records(isbn)`);
+        
+        res.json({
+            success: true,
+            message: 'Booksonix table has been reset with SKU-based structure'
+        });
+        
+    } catch (err) {
+        res.status(500).json({
+            error: 'Failed to reset table',
+            message: err.message
+        });
     }
 });
 
@@ -1165,6 +1156,77 @@ app.get('/api/stats', async (req, res) => {
     } catch (err) {
         console.error('Database error:', err);
         res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Clear all records endpoint (reconnecting existing functionality)
+app.delete('/api/clear-data', async (req, res) => {
+    try {
+        // Clear the main records table
+        await pool.query('DELETE FROM records');
+        
+        // Reset the upload log
+        await pool.query('DELETE FROM upload_log');
+        
+        // Reset customer exclusions if needed
+        await pool.query('DELETE FROM customer_exclusions');
+        
+        console.log('All records cleared successfully');
+        
+        res.json({ 
+            success: true, 
+            message: 'All records cleared successfully' 
+        });
+    } catch (err) {
+        console.error('Error clearing records:', err);
+        res.status(500).json({ 
+            error: 'Failed to clear records', 
+            details: err.message 
+        });
+    }
+});
+
+// Clear Booksonix records endpoint
+app.delete('/api/clear-booksonix', async (req, res) => {
+    try {
+        // Clear only the booksonix_records table
+        const result = await pool.query('DELETE FROM booksonix_records');
+        
+        console.log(`Cleared ${result.rowCount} Booksonix records`);
+        
+        res.json({ 
+            success: true, 
+            message: `Successfully cleared ${result.rowCount} Booksonix records`,
+            deletedCount: result.rowCount
+        });
+    } catch (err) {
+        console.error('Error clearing Booksonix records:', err);
+        res.status(500).json({ 
+            error: 'Failed to clear Booksonix records', 
+            details: err.message 
+        });
+    }
+});
+
+// Reset all exclusions endpoint
+app.post('/api/reset-exclusions', async (req, res) => {
+    try {
+        // Clear all customer exclusions
+        const result = await pool.query('DELETE FROM customer_exclusions');
+        
+        console.log(`Reset ${result.rowCount} customer exclusions`);
+        
+        res.json({ 
+            success: true, 
+            message: `Successfully reset ${result.rowCount} customer exclusions`,
+            resetCount: result.rowCount
+        });
+    } catch (err) {
+        console.error('Error resetting exclusions:', err);
+        res.status(500).json({ 
+            error: 'Failed to reset exclusions', 
+            details: err.message 
+        });
     }
 });
 
