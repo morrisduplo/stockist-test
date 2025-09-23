@@ -121,17 +121,18 @@
             transition: all 0.3s ease;
             cursor: pointer;
             text-align: center;
-            border: 2px dashed #bdc3c7;
             min-height: 140px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
         }
 
         .nav-card:hover {
-            border-color: #666666;
             background-color: #f8f9fa;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
         }
 
         .nav-card.disabled {
